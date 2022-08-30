@@ -37,11 +37,27 @@
 
 using namespace std;
 
+struct FPii {
+  int fi, se;
+  FPii(int fi_, int se_){fi = fi_; se = se_;}
+  FPii(){fi = se = 0;}
+  bool operator == (const FPii &oth) const { return fi == oth.fi && se == oth.se; }
+  bool operator < (const FPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
+};
+
+struct FPll {ll fi, se;};
+
+struct FPllPii {
+  ll fi; FPii se;
+  bool operator < (const FPllPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
+};
+
 ///!!uses a..z. indexes from 1.
 ///first has to be int/ll. unstable sort.
 template<typename T>
 void radixSortPairs (int l, int r, T *v) {
   const int base = 256;
+
   vector<vector<T>> u(2);
   u[0].resize(r+1); u[1].resize(r+1);
   int cnt[base] = {0};
@@ -51,7 +67,8 @@ void radixSortPairs (int l, int r, T *v) {
   if (mel > 0) mel = 0;
 
   for (i = l; i <= r; i++) {
-    u[0][i] = make_pair(v[i].fi - mel, v[i].se);
+    u[0][i].fi = v[i].fi - mel;
+    u[0][i].se = v[i].se;
   }
 
   int noPasses = sizeof(v[l].fi); ///4 for int, 8 for ll.
@@ -73,25 +90,26 @@ void radixSortPairs (int l, int r, T *v) {
   }
 
   for (i = l; i <= r; i++) {
-    v[i] = make_pair(u[pin][i].fi + mel, u[pin][i].se);
+    v[i].fi = u[pin][i].fi + mel;
+    v[i].se = u[pin][i].se;
   }
 }
 
 struct HashedString {
   int n;
   string s;
-  vector<pii> p27, hhPref;
-  pii mod;
+  vector<FPii> p27, hhPref;
+  FPii mod;
 
-  HashedString(string s_, pii mod_) {
+  HashedString(string s_, FPii mod_) {
     n = sz(s_);
     p27.resize(n+1);
     hhPref.resize(n+1);
     s = " " + s_;
     mod = mod_;
 
-    p27[0] = pii(1, 1);
-    hhPref[0] = pii(0, 0);
+    p27[0] = FPii(1, 1);
+    hhPref[0] = FPii(0, 0);
     for (int i = 1; i <= n; i++) {
       p27[i].fi = (ll)p27[i-1].fi * 27 % mod.fi;
       p27[i].se = (ll)p27[i-1].se * 27 % mod.se;
@@ -102,8 +120,8 @@ struct HashedString {
   }
 
   ///returns the corresponding hash for the [l..r] string.
-  pii cut(int l, int r) {
-    return pii(
+  FPii cut(int l, int r) {
+    return FPii(
       (hhPref[r].fi - (ll)hhPref[l-1].fi * p27[r-l+1].fi % mod.fi + mod.fi) % mod.fi,
       (hhPref[r].se - (ll)hhPref[l-1].se * p27[r-l+1].se % mod.se + mod.se) % mod.se
     );
@@ -112,28 +130,26 @@ struct HashedString {
 
 class ExpoSizeStrSrc {
 private:
-  const pii mod = pii(1000000007, 1000000009);
-  const pii arbBase = pii(8191, 524287); ///2097152, 4194304
+  const FPii mod = FPii(1000000007, 1000000009);
+  const FPii arbBase = FPii(2097152, 4194304); ///8191, 524287
   static const int maxn = 100000, ml2 = 17;
-
 
   int g[maxn*ml2+1][ml2+1]; ///g[..][0] = size.
   int id[maxn+1][ml2+1]; ///id[i][j] = at what index in g will I find s[i..i+(1<<j)-1].
-  pii idToHhAsoc[maxn*ml2+1]; ///give DAG id => get associated hash for the respective node.
+  FPii idToHhAsoc[maxn*ml2+1]; ///give DAG id => get associated hash for the respective node.
   int remainingIds[maxn*ml2+1]; ///what ids remain after compression? their number is kept in g[0][0].
 
-  pii pBase[ml2+1];
   int leverage[maxn*ml2+1];
-  pii hhAsoc[maxn+1][ml2+1]; ///hhAsoc[i][j] = string.cut(i, i+(1<<j)-1).
-  pii hhG[maxn+1][ml2+1]; ///associated hash for the id[i][j] subtree.
-  pair<ll, pii> hhGToId[maxn*ml2+1]; ///<hhG of (i, j), (i, j)>.
+  FPii hhAsoc[maxn+1][ml2+1]; ///hhAsoc[i][j] = string.cut(i, i+(1<<j)-1).
+  FPii hhG[maxn+1][ml2+1]; ///associated hash for the id[i][j] subtree.
+  FPllPii hhGToId[maxn*ml2+1]; ///<hhG of (i, j), (i, j)>.
   bool gIdTakenHelp[maxn*ml2+1]; ///must look out for duplicates when eventually building g.
 
   ///trie built from dictionary entries.
   struct TrieNode {
     vi indexesEndingHere; ///the indexes whose dictionary strings end here.
-    map<pii, TrieNode *> sons; ///do I have a son with some associated hash?
-    vector<pii> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
+    map<FPii, TrieNode *> sons; ///do I have a son with some associated hash?
+    vector<FPii> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
   };
 
   const int TNBufSz = 4096;
@@ -160,7 +176,7 @@ public:
     int n = sz(s);
     HashedString hs(s, mod);
 
-    trieRoot->idLevsCurrentlyHere.pb(pii(0, inf));
+    trieRoot->idLevsCurrentlyHere.pb(FPii(0, inf));
 
     int i, j, z;
     int gNodeCnt = 1;
@@ -174,26 +190,26 @@ public:
     }
 
     ///build hashes for g's subtrees.
-    pBase[0] = pii(1, 1);
-    for (i = 1; i <= ml2; i++) {
-      pBase[i].fi = (ll)pBase[i-1].fi * arbBase.fi % mod.fi;
-      pBase[i].se = (ll)pBase[i-1].se * arbBase.se % mod.se;
-    }
-
-    pll extraAdd;
+    FPll extraAdd;
+    FPii pBase(1, 1);
     for (j = 0; (1<<j) <= n; j++) {
       for (i = 1; i+(1<<j)-1 <= n; i++) {
-        extraAdd.fi = (ll)hhAsoc[i][j].fi * pBase[j].fi;
-        extraAdd.se = (ll)hhAsoc[i][j].se * pBase[j].se;
-        for (z = j-1; z >= 0; z--) {
-          if (i+(1<<j)+(1<<z)-1 <= n) {
+        extraAdd.fi = (ll)hhAsoc[i][j].fi * pBase.fi; ///pBase = arbBase ^ j.
+        extraAdd.se = (ll)hhAsoc[i][j].se * pBase.se;
+
+        z = j-1;
+        while (z >= 0 && i+(1<<j)+(1<<z)-1 > n) z--;
+        if (z >= 0) {
             extraAdd.fi += hhG[i+(1<<j)][z].fi;
             extraAdd.se += hhG[i+(1<<j)][z].se;
-          }
         }
+
         hhG[i][j].fi = extraAdd.fi % mod.fi;
         hhG[i][j].se = extraAdd.se % mod.se;
       }
+
+      pBase.fi = (ll)pBase.fi * arbBase.fi % mod.fi;
+      pBase.se = (ll)pBase.se * arbBase.se % mod.se;
     }
 
     ///if there are 2 nodes in the DAG which share the same hhG (=> same hhAsoc as well), unite them.
@@ -204,12 +220,12 @@ public:
     for (i = 1; i <= n; i++) {
       for (j = 0; i+(1<<j)-1 <= n; j++) {
         hhGToId[szh].fi = ((ll)hhG[i][j].fi << 32) | hhG[i][j].se;
-        hhGToId[szh].se = pii(i, j);
+        hhGToId[szh].se = FPii(i, j);
         szh++;
       }
     }
 
-    radixSortPairs<pair<ll, pii>>(0, szh-1, hhGToId);
+    radixSortPairs<FPllPii>(0, szh-1, hhGToId);
 
     z = 0;
     while (z < szh) {
@@ -273,7 +289,7 @@ public:
     TrieNode *trieNow = trieRoot, *trieNext = NULL;
     for (i = ml2, z = 1; i >= 0; i--) {
       if (sz(t) & (1<<i)) {
-        pii hh = ht.cut(z, z+(1<<i)-1);
+        FPii hh = ht.cut(z, z+(1<<i)-1);
         z += (1<<i);
 
         auto it = trieNow->sons.find(hh);
@@ -295,7 +311,7 @@ public:
     if (!trieNow) return;
 
     int levSum = 0;
-    for (pii &x: trieNow->idLevsCurrentlyHere) {
+    for (FPii &x: trieNow->idLevsCurrentlyHere) {
       levSum += x.se;
     }
 
@@ -310,25 +326,25 @@ public:
     int i, nod, nn, levChain;
 
     ///transform trieNow->sons in a sorted array.
-    vector<pair<pii, TrieNode *>> sons;
+    vector<pair<FPii, TrieNode *>> sons;
     //sons.reserve(sz(trieNow->sons));
     for (auto &x: trieNow->sons) sons.pb(x);
 
-    for (pii &x: trieNow->idLevsCurrentlyHere) {
+    for (FPii &x: trieNow->idLevsCurrentlyHere) {
       nod = x.fi; levChain = x.se;
 
       for (i = 1; i <= g[nod][0]; i++) {
         if (nod == 0) nn = remainingIds[i]; else nn = g[nod][i];
 
         auto it = lower_bound(all(sons), make_pair(idToHhAsoc[nn], (TrieNode *)NULL),
-                              [](const pair<pii, TrieNode *> &a, const pair<pii, TrieNode *> &b) {
+                              [](const pair<FPii, TrieNode *> &a, const pair<FPii, TrieNode *> &b) {
           if (a.fi.fi != b.fi.fi) return a.fi.fi < b.fi.fi;
           return a.fi.se < b.fi.se;
         });
 
         if (it != sons.end() && it->fi == idToHhAsoc[nn]) {
           if (sz(it->se->idLevsCurrentlyHere) == 0 || it->se->idLevsCurrentlyHere.back().fi != nn) {
-            it->se->idLevsCurrentlyHere.pb(pii(nn, min(levChain, leverage[nn])));
+            it->se->idLevsCurrentlyHere.pb(FPii(nn, min(levChain, leverage[nn])));
           } else {
             ///duplicates may exist. possible to have multiple descendants with the same index after compression.
             ///because of the mode in which I compress (merge in the lowest index) => the indexes from it->se->idLevs.. are ordered increasingly.
