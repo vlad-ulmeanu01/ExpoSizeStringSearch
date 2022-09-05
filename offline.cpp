@@ -45,8 +45,6 @@ struct FPii {
   bool operator < (const FPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
 };
 
-struct FPll {ll fi, se;};
-
 struct FPllPii {
   ll fi; FPii se;
   bool operator < (const FPllPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
@@ -120,18 +118,17 @@ struct HashedString {
   }
 
   ///returns the corresponding hash for the [l..r] string.
-  FPii cut(int l, int r) {
-    return FPii(
-      (hhPref[r].fi - (ll)hhPref[l-1].fi * p27[r-l+1].fi % mod.fi + mod.fi) % mod.fi,
-      (hhPref[r].se - (ll)hhPref[l-1].se * p27[r-l+1].se % mod.se + mod.se) % mod.se
-    );
+  void cut(int l, int r, FPii &ans) {
+    ans.fi = hhPref[r].fi - (ll)hhPref[l-1].fi * p27[r-l+1].fi % mod.fi + mod.fi;
+    ans.se = hhPref[r].se - (ll)hhPref[l-1].se * p27[r-l+1].se % mod.se + mod.se;
+    if (ans.fi >= mod.fi) ans.fi -= mod.fi;
+    if (ans.se >= mod.se) ans.se -= mod.se;
   }
 };
 
 class ExpoSizeStrSrc {
 private:
   const FPii mod = FPii(1000000007, 1000000009);
-  const FPii arbBase = FPii(2097152, 4194304); ///8191, 524287
   static const int maxn = 100000, ml2 = 17;
 
   int g[maxn*ml2+1][ml2+1]; ///g[..][0] = size.
@@ -183,33 +180,17 @@ public:
     for (i = 1; i <= n; i++) {
       for (j = 0; i+(1<<j)-1 <= n; j++) {
         leverage[gNodeCnt] = 1;
-        hhAsoc[i][j] = hs.cut(i, i+(1<<j)-1);
+        hs.cut(i, i+(1<<j)-1, hhAsoc[i][j]);
         idToHhAsoc[gNodeCnt] = hhAsoc[i][j];
         id[i][j] = gNodeCnt++;
       }
     }
 
     ///build hashes for g's subtrees.
-    FPll extraAdd;
-    FPii pBase(1, 1);
     for (j = 0; (1<<j) <= n; j++) {
       for (i = 1; i+(1<<j)-1 <= n; i++) {
-        extraAdd.fi = (ll)hhAsoc[i][j].fi * pBase.fi; ///pBase = arbBase ^ j.
-        extraAdd.se = (ll)hhAsoc[i][j].se * pBase.se;
-
-        z = j-1;
-        while (z >= 0 && i+(1<<j)+(1<<z)-1 > n) z--;
-        if (z >= 0) {
-            extraAdd.fi += hhG[i+(1<<j)][z].fi;
-            extraAdd.se += hhG[i+(1<<j)][z].se;
-        }
-
-        hhG[i][j].fi = extraAdd.fi % mod.fi;
-        hhG[i][j].se = extraAdd.se % mod.se;
+        hs.cut(i, min(n, i+(1<<(j+1))-2), hhG[i][j]);
       }
-
-      pBase.fi = (ll)pBase.fi * arbBase.fi % mod.fi;
-      pBase.se = (ll)pBase.se * arbBase.se % mod.se;
     }
 
     ///if there are 2 nodes in the DAG which share the same hhG (=> same hhAsoc as well), unite them.
@@ -287,9 +268,10 @@ public:
 
     int i, j, z;
     TrieNode *trieNow = trieRoot, *trieNext = NULL;
+    FPii hh;
     for (i = ml2, z = 1; i >= 0; i--) {
       if (sz(t) & (1<<i)) {
-        FPii hh = ht.cut(z, z+(1<<i)-1);
+        ht.cut(z, z+(1<<i)-1, hh);
         z += (1<<i);
 
         auto it = trieNow->sons.find(hh);
@@ -327,7 +309,7 @@ public:
 
     ///transform trieNow->sons in a sorted array.
     vector<pair<FPii, TrieNode *>> sons;
-    //sons.reserve(sz(trieNow->sons));
+    sons.reserve(sz(trieNow->sons));
     for (auto &x: trieNow->sons) sons.pb(x);
 
     for (FPii &x: trieNow->idLevsCurrentlyHere) {
