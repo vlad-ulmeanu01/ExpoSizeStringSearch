@@ -37,24 +37,40 @@
 
 using namespace std;
 
-///!!folosire ch a..z. indexare de la 1.
-///first tb sa fie int/ll. ordinea lui second este incerta dupa sortare.
+struct FPii {
+  int fi, se;
+  FPii(int fi_, int se_){fi = fi_; se = se_;}
+  FPii(){fi = se = 0;}
+  bool operator == (const FPii &oth) const { return fi == oth.fi && se == oth.se; }
+  bool operator < (const FPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
+};
+
+struct FPllPii {
+  ll fi; FPii se;
+  bool operator < (const FPllPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
+};
+
+///!!uses a..z. indexes from 1.
+///first has to be int/ll. unstable sort.
 template<typename T>
 void radixSortPairs (int l, int r, T *v) {
   const int base = 256;
+
   vector<vector<T>> u(2);
   u[0].resize(r+1); u[1].resize(r+1);
   int cnt[base] = {0};
 
   int i, j, z, pin;
+
   auto mel = min_element(v+l, v+r+1)->fi;
   if (mel > 0) mel = 0;
 
   for (i = l; i <= r; i++) {
-    u[0][i] = make_pair(v[i].fi - mel, v[i].se);
+    u[0][i].fi = v[i].fi - mel;
+    u[0][i].se = v[i].se;
   }
 
-  int noPasses = sizeof(v[l].fi); ///pt int 4, pt ll 8.
+  int noPasses = sizeof(v[l].fi); ///4 for int, 8 for ll.
   for (i = 0, pin = 0; i < noPasses; i++, pin ^= 1) {
     fill(cnt, cnt + base, 0);
 
@@ -73,25 +89,26 @@ void radixSortPairs (int l, int r, T *v) {
   }
 
   for (i = l; i <= r; i++) {
-    v[i] = make_pair(u[pin][i].fi + mel, u[pin][i].se);
+    v[i].fi = u[pin][i].fi + mel;
+    v[i].se = u[pin][i].se;
   }
 }
 
 struct HashedString {
   int n;
   string s;
-  vector<pii> p27, hhPref;
-  pii mod;
+  vector<FPii> p27, hhPref;
+  FPii mod;
 
-  HashedString(string s_, pii mod_) {
+  HashedString(string s_, FPii mod_) {
     n = sz(s_);
     p27.resize(n+1);
     hhPref.resize(n+1);
     s = " " + s_;
     mod = mod_;
 
-    p27[0] = pii(1, 1);
-    hhPref[0] = pii(0, 0);
+    p27[0] = FPii(1, 1);
+    hhPref[0] = FPii(0, 0);
     for (int i = 1; i <= n; i++) {
       p27[i].fi = (ll)p27[i-1].fi * 27 % mod.fi;
       p27[i].se = (ll)p27[i-1].se * 27 % mod.se;
@@ -101,39 +118,36 @@ struct HashedString {
     }
   }
 
-  ///returneaza hashul corespunzator stringului [l..r].
-  pii cut(int l, int r) {
-    return pii(
-      (hhPref[r].fi - (ll)hhPref[l-1].fi * p27[r-l+1].fi % mod.fi + mod.fi) % mod.fi,
-      (hhPref[r].se - (ll)hhPref[l-1].se * p27[r-l+1].se % mod.se + mod.se) % mod.se
-    );
+  ///returns the corresponding hash for the [l..r] string.
+  void cut(int l, int r, FPii &ans) {
+    ans.fi = hhPref[r].fi - (ll)hhPref[l-1].fi * p27[r-l+1].fi % mod.fi + mod.fi;
+    ans.se = hhPref[r].se - (ll)hhPref[l-1].se * p27[r-l+1].se % mod.se + mod.se;
+    if (ans.fi >= mod.fi) ans.fi -= mod.fi;
+    if (ans.se >= mod.se) ans.se -= mod.se;
   }
 };
 
 class ExpoSizeStrSrc {
 private:
-  const pii mod = pii(1000000007, 1000000009);
-  const pii arbBase = pii(8191, 524287);
+  const FPii mod = FPii(1000000007, 1000000009);
   static const int maxn = 100000, ml2 = 17;
 
-
   int g[maxn*ml2+1][ml2+1]; ///g[..][0] = size.
-  int id[maxn+1][ml2+1]; ///id[i][j] = la ce indice in g o sa gasesc s[i..i+(1<<j)-1].
-  pii idToHhAsoc[maxn*ml2+1]; ///dau id din graf => hh asociat nodului respectiv.
-  int remainingIds[maxn*ml2+1]; ///dupa compresie, ce id-uri raman? numarul lor e stocat in g[0][0].
+  int id[maxn+1][ml2+1]; ///id[i][j] = at what index in g will I find s[i..i+(1<<j)-1].
+  FPii idToHhAsoc[maxn*ml2+1]; ///give DAG id => get associated hash for the respective node.
+  int remainingIds[maxn*ml2+1]; ///what ids remain after compression? their number is kept in g[0][0].
 
-  pii pBase[ml2+1];
   int leverage[maxn*ml2+1];
-  pii hhAsoc[maxn+1][ml2+1]; ///hhAsoc[i][j] = string.cut(i, i+(1<<j)-1).
-  pii hhG[maxn+1][ml2+1]; ///hhG[i][j] = hashul asociat subarborelui id[i][j].
-  pair<ll, pii> hhGToId[maxn*ml2+1]; ///hhG al lui (i, j) => ce (i, j) are hashul ala.
-  bool gIdTakenHelp[maxn*ml2+1]; ///cand construiesc g, trb sa am grija la duplicate.
+  FPii hhAsoc[maxn+1][ml2+1]; ///hhAsoc[i][j] = string.cut(i, i+(1<<j)-1).
+  FPii hhG[maxn+1][ml2+1]; ///associated hash for the id[i][j] subtree.
+  FPllPii hhGToId[maxn*ml2+1]; ///<hhG of (i, j), (i, j)>.
+  bool gIdTakenHelp[maxn*ml2+1]; ///must look out for duplicates when eventually building g.
 
-  ///fac trie din stringurile pe care vreau sa le caut.
+  ///trie built from dictionary entries.
   struct TrieNode {
-    vi indexesEndingHere; ///indicii ale caror stringuri cautate se termina aici.
-    map<pii, TrieNode *> sons; ///hash asociat => am fiu?
-    vector<pii> idLevsCurrentlyHere; ///in timpul cautarii. tine minte indicii care pot fi impinsi in jos, min lev pe lantul resp.
+    vi indexesEndingHere; ///the indexes whose dictionary strings end here.
+    map<FPii, TrieNode *> sons; ///do I have a son with some associated hash?
+    vector<FPii> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
   };
 
   const int TNBufSz = 4096;
@@ -153,64 +167,47 @@ public:
   ExpoSizeStrSrc(){}
 
   TrieNode *trieRoot = trieNodeAlloc();
-  vi massSearchResults; ///rezultatele dupa cautarea in masa. (de cate ori apare .. in s?).
+  vi massSearchResults; ///results after mass-search. how many times does .. appear in s?
 
-  ///creeaza DAG-ul pentru un string.
+  ///builds the DAG for the given string.
   void init(string s) {
     int n = sz(s);
     HashedString hs(s, mod);
 
-    trieRoot->idLevsCurrentlyHere.pb(pii(0, inf));
+    trieRoot->idLevsCurrentlyHere.pb(FPii(0, inf));
 
     int i, j, z;
     int gNodeCnt = 1;
     for (i = 1; i <= n; i++) {
       for (j = 0; i+(1<<j)-1 <= n; j++) {
         leverage[gNodeCnt] = 1;
-        hhAsoc[i][j] = hs.cut(i, i+(1<<j)-1);
+        hs.cut(i, i+(1<<j)-1, hhAsoc[i][j]);
         idToHhAsoc[gNodeCnt] = hhAsoc[i][j];
         id[i][j] = gNodeCnt++;
       }
     }
 
-    ///copnstruiesc hashuri pentru subarborii lui g.
-    pBase[0] = pii(1, 1);
-    for (i = 1; i <= ml2; i++) {
-      pBase[i].fi = (ll)pBase[i-1].fi * arbBase.fi % mod.fi;
-      pBase[i].se = (ll)pBase[i-1].se * arbBase.se % mod.se;
-    }
-
-    pll extraAdd;
+    ///build hashes for g's subtrees.
     for (j = 0; (1<<j) <= n; j++) {
       for (i = 1; i+(1<<j)-1 <= n; i++) {
-        hhG[i][j].fi = (ll)hhAsoc[i][j].fi * pBase[j].fi % mod.fi;
-        hhG[i][j].se = (ll)hhAsoc[i][j].se * pBase[j].se % mod.se;
-        for (extraAdd.fi = extraAdd.se = 0, z = j-1; z >= 0; z--) {
-          if (i+(1<<j)+(1<<z)-1 <= n) {
-            extraAdd.fi += hhG[i+(1<<j)][z].fi;
-            extraAdd.se += hhG[i+(1<<j)][z].se;
-          }
-        }
-        extraAdd.fi %= mod.fi; extraAdd.se %= mod.se;
-        hhG[i][j].fi += extraAdd.fi; if (hhG[i][j].fi >= mod.fi) hhG[i][j].fi -= mod.fi;
-        hhG[i][j].se += extraAdd.se; if (hhG[i][j].se >= mod.se) hhG[i][j].se -= mod.se;
+        hs.cut(i, min(n, i+(1<<(j+1))-2), hhG[i][j]);
       }
     }
 
-    ///daca exista 2 noduri in DAG care au acelasi hhAsoc si au acelasi hhG, le unesc.
-    ///acelasi hhAsoc => (prob mare) acelasi substring retinut (si important aceeasi lg a substringului).
-    ///acelasi hhG => (prob mare) exact acelasi subarbore.
+    ///if there are 2 nodes in the DAG which share the same hhG (=> same hhAsoc as well), unite them.
+    ///same hhAsoc => (high probability) same substring retained.
+    ///same hhG => (high probability) exactly the same subtree.
 
     int szh = 0;
     for (i = 1; i <= n; i++) {
       for (j = 0; i+(1<<j)-1 <= n; j++) {
         hhGToId[szh].fi = ((ll)hhG[i][j].fi << 32) | hhG[i][j].se;
-        hhGToId[szh].se = pii(i, j);
+        hhGToId[szh].se = FPii(i, j);
         szh++;
       }
     }
 
-    radixSortPairs<pair<ll, pii>>(0, szh-1, hhGToId);
+    radixSortPairs<FPllPii>(0, szh-1, hhGToId);
 
     z = 0;
     while (z < szh) {
@@ -223,8 +220,8 @@ public:
         i++;
       }
 
-      ///[z, i) au acelasi hhG. le unesc, insa pastrez nodul cu id-ul minim (ie cel care apare primul
-      ///si in caz de egalitate este cel mai scurt. (ajuta pt determinarea primei aparitii).
+      ///[z, i) have the same hhG. unite them, but merge in the node with the min id (j) (ie the one that appears first
+      ///and in case of equality is the shortest). (helps determining the position of the first match).
       for (; z < i; z++) {
         if (z != j) {
           leverage[id[hhGToId[j].se.fi][hhGToId[j].se.se]] +=
@@ -236,16 +233,16 @@ public:
       }
     }
 
-    ///acum construiesc graful.
+    ///finally build the graph.
     int originalId = 1;
     for (i = 1; i <= n; i++) {
       for (j = 0; i+(1<<j)-1 <= n; j++, originalId++) {
-        ///ma ocup de conexiunile din g[0].
+        ///edges from g[0].
         if (leverage[originalId] != 0) {
           remainingIds[++g[0][0]] = originalId;
         }
 
-        ///in cine pot sa merg din s[i..i+(1<<j)-1]?
+        ///where can I go from s[i..i+(1<<j)-1]?
         if (g[id[i][j]][0] == 0) {
           for (z = 0; z < j; z++) { ///!! z < j.
             if (i+(1<<j)+(1<<z)-1 <= n && !gIdTakenHelp[id[i+(1<<j)][z]]) {
@@ -263,7 +260,7 @@ public:
     }
   }
 
-  ///de cate ori apare t in s?
+  ///how many times does t appear in s? (hash chain form)
   void insertQueriedString(int l, int r, HashedString &ht) {
     massSearchResults.pb(0);
     int nt = r-l+1;
@@ -271,9 +268,10 @@ public:
 
     int i, j, z;
     TrieNode *trieNow = trieRoot, *trieNext = NULL;
+    FPii hh;
     for (i = ml2, z = l; i >= 0; i--) {
       if (nt & (1<<i)) {
-        pii hh = ht.cut(z, z+(1<<i)-1);
+        ht.cut(z, z+(1<<i)-1, hh);
         z += (1<<i);
 
         auto it = trieNow->sons.find(hh);
@@ -290,15 +288,15 @@ public:
     trieNow->indexesEndingHere.pb(sz(massSearchResults) - 1);
   }
 
-  ///primeste indicele nodului din g. propaga ce e pe acolo.
+  ///how many times do I propagate a token?
   int cnt = 0;
 
-  ///primeste indicele nodului din g. propaga ce e pe acolo.
+  ///propagates what is in the given trie node.
   void massSearch(TrieNode *trieNow) {
     if (!trieNow) return;
 
     int levSum = 0;
-    for (pii &x: trieNow->idLevsCurrentlyHere) {
+    for (FPii &x: trieNow->idLevsCurrentlyHere) {
       levSum += x.se;
     }
 
@@ -312,10 +310,12 @@ public:
 
     int i, nod, nn, levChain;
 
-    ///transform trieNow->sons intr-un vector sortat.
-    vector<pair<pii, TrieNode *>> sons; for (auto &x: trieNow->sons) sons.pb(x);
+    ///transform trieNow->sons in a sorted array.
+    vector<pair<FPii, TrieNode *>> sons;
+    sons.reserve(sz(trieNow->sons));
+    for (auto &x: trieNow->sons) sons.pb(x);
 
-    for (pii &x: trieNow->idLevsCurrentlyHere) {
+    for (FPii &x: trieNow->idLevsCurrentlyHere) {
       nod = x.fi; levChain = x.se;
 
       for (i = 1; i <= g[nod][0]; i++) {
@@ -324,17 +324,17 @@ public:
         if (nod == 0) nn = remainingIds[i]; else nn = g[nod][i];
 
         auto it = lower_bound(all(sons), make_pair(idToHhAsoc[nn], (TrieNode *)NULL),
-                              [](const pair<pii, TrieNode *> &a, const pair<pii, TrieNode *> &b) {
+                              [](const pair<FPii, TrieNode *> &a, const pair<FPii, TrieNode *> &b) {
           if (a.fi.fi != b.fi.fi) return a.fi.fi < b.fi.fi;
           return a.fi.se < b.fi.se;
         });
 
         if (it != sons.end() && it->fi == idToHhAsoc[nn]) {
           if (sz(it->se->idLevsCurrentlyHere) == 0 || it->se->idLevsCurrentlyHere.back().fi != nn) {
-            it->se->idLevsCurrentlyHere.pb(pii(nn, min(levChain, leverage[nn])));
+            it->se->idLevsCurrentlyHere.pb(FPii(nn, min(levChain, leverage[nn])));
           } else {
-            ///posibil sa am duplicate. posibil sa am mai multi descendenti cu acelasi indice dupa compresie.
-            ///datorita modului in care fac compresia (unire in cel mai din stanga indice) => indicii din it->se->idLevs.. sunt crescatori.
+            ///duplicates may exist. possible to have multiple descendants with the same index after compression.
+            ///because of the mode in which I compress (merge in the lowest index) => the indexes from it->se->idLevs.. are ordered increasingly.
             it->se->idLevsCurrentlyHere.back().se += min(levChain, leverage[nn]);
           }
         }
@@ -365,7 +365,7 @@ void test100ka() {
 
   TIMER('A')
 
-  HashedString hs(s, pii(1000000007, 1000000009));
+  HashedString hs(s, FPii(1000000007, 1000000009));
 
   for (int _ = 1; _ <= n; _++) {
     E3S.insertQueriedString(1, _, hs);
@@ -393,7 +393,7 @@ void test50kab49999a() {
 
   TIMER('A')
 
-  HashedString hs(s, pii(1000000007, 1000000009));
+  HashedString hs(s, FPii(1000000007, 1000000009));
 
   for (int _ = 1; _ <= (n>>1); _++) {
     E3S.insertQueriedString(1, _, hs);
@@ -427,7 +427,7 @@ void test50kab() {
 
   TIMER('A')
 
-  HashedString hs(s, pii(1000000007, 1000000009));
+  HashedString hs(s, FPii(1000000007, 1000000009));
 
   for (int i = 1; i <= 4; i++) {
     for (int _ = i; _ <= n; _++) {
@@ -458,7 +458,7 @@ void testAlmostPeriod() {
 
   TIMER('A')
 
-  HashedString hs(s, pii(1000000007, 1000000009));
+  HashedString hs(s, FPii(1000000007, 1000000009));
 
   for (int i = 1; i <= 2; i++) {
     for (int _ = i; _ <= n-2; _++) {
@@ -482,8 +482,8 @@ int main() {
   ///in tests 1, 3, 4 dictionaries are fully filled with all substrings that could be found in s.
 //  test100ka();       ///aa..a (n = 1e5)
 //  test50kab49999a(); ///one 'b' in middle of (1e5-1)'a's. dictionary is not completely filled.
-//  test50kab();      ///abcdabcd...abcd (n = 1e5)
-  testAlmostPeriod(); ///ababab...abc (n = 1e5-1).
+  test50kab();      ///abcdabcd...abcd (n = 1e5)
+//  testAlmostPeriod(); ///ababab...abc (n = 1e5-1).
 
   return 0;
 }
