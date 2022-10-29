@@ -149,7 +149,7 @@ private:
     vector<FPii> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
   };
 
-  const int TNBufSz = 4096;
+  const int TNBufSz = 8192;
   int TNBufInd = TNBufSz;
   TrieNode *TNBuffer;
 
