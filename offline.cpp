@@ -1,371 +1,491 @@
 ///PTM HAI
 #pragma GCC optimize("Ofast,no-stack-protector,unroll-loops,fast-math,O3")
-#pragma GCC target("sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,tune=native")
+#pragma GCC target("sse,sse2,sse3,sse3,sse4,popcnt,abm,mmx,avx,avx2,tune=native")
 
 #include <algorithm>
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <climits>
 #include <cassert>
 #include <chrono>
 #include <vector>
+#include <random>
 #include <stack>
+#include <cmath>
 #include <map>
-#define ll long long
-#define pii pair<int,int>
-#define pli pair<ll,int>
-#define pil pair<int,ll>
-#define pll pair<ll,ll>
-#define fi first
-#define se second
-#define inf (INT_MAX/2-1)
-#define infl (1LL<<61)
-#define vi vector<int>
-#define vl vector<ll>
-#define pb push_back
-#define sz(a) ((int)(a).size())
-#define all(a) begin(a),end(a)
-#define y0 y5656
-#define y1 y7878
-#define aaa system("pause");
-#define dbg(x) std::cerr<<(#x)<<": "<<(x)<<'\n',aaa
-#define dbga(x,n) std::cerr<<(#x)<<"[]: ";for(int _=0;_<n;_++)std::cerr<<x[_]<<' ';std::cerr<<'\n',aaa
-#define dbgs(x) std::cerr<<(#x)<<"[stl]: ";for(auto _:x)std::cerr<<_<<' ';std::cerr<<'\n',aaa
-#define dbgp(x) std::cerr<<(#x)<<": "<<x.fi<<' '<<x.se<<'\n',aaa
-#define dbgsp(x) std::cerr<<(#x)<<"[stl pair]:\n";for(auto _:x)std::cerr<<_.fi<<' '<<_.se<<'\n';aaa
-#define TIMER(x) stop = std::chrono::steady_clock::now(); cerr << x << ' ' << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() / 1000000.0 << '\n'; start = std::chrono::steady_clock::now();
 
-using namespace std;
-
-struct FPii {
-  int fi, se;
-  FPii(int fi_, int se_){fi = fi_; se = se_;}
-  FPii(){fi = se = 0;}
-  bool operator == (const FPii &oth) const { return fi == oth.fi && se == oth.se; }
-  bool operator < (const FPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
-};
-
-struct FPllPii {
-  ll fi; FPii se;
-  bool operator < (const FPllPii &oth) const { return fi < oth.fi || (fi == oth.fi && se < oth.se); }
-};
-
-///!!uses a..z. indexes from 1.
-///first has to be int/ll. unstable sort.
+/**
+ * @tparam T Sorts an array of pairs. The first element in the pairs has to be of type int/long long/__int128.
+ * @param v Pointer to an array.
+ * @param l First position that is sorted (v + l).
+ * @param r Last position that is sorted (v + r).
+ * the sort is unstable.
+ */
 template<typename T>
-void radixSortPairs (int l, int r, T *v) {
-  const int base = 256;
+void radixSortPairs(T *v, int l, int r) {
+	const int base = 256;
 
-  vector<vector<T>> u(2);
-  u[0].resize(r+1); u[1].resize(r+1);
-  int cnt[base] = {0};
+	std::array<std::vector<T>, 2> u;
+	u[0].resize(r+1); u[1].resize(r+1);
+	int cnt[base] = {0};
 
-  int i, j, z, pin;
-  auto mel = min_element(v+l, v+r+1)->fi;
-  if (mel > 0) mel = 0;
+	int i, j, z, pin;
 
-  for (i = l; i <= r; i++) {
-    u[0][i].fi = v[i].fi - mel;
-    u[0][i].se = v[i].se;
-  }
+	auto mel = std::min_element(v+l, v+r+1)->first;
+	if (mel > 0) mel = 0;
 
-  int noPasses = sizeof(v[l].fi); ///4 for int, 8 for ll.
-  for (i = 0, pin = 0; i < noPasses; i++, pin ^= 1) {
-    fill(cnt, cnt + base, 0);
+	for (i = l; i <= r; i++) {
+		u[0][i].first = v[i].first - mel;
+		u[0][i].second = v[i].second;
+	}
 
-    for (j = l; j <= r; j++) {
-      cnt[(u[pin][j].fi >> (i << 3)) & 255]++;
-    }
+	int noPasses = sizeof(v[l].first); ///4 for int, 8 for ll, 16 for __int128.
+	for (i = 0, pin = 0; i < noPasses; i++, pin ^= 1) {
+		std::fill(cnt, cnt + base, 0);
 
-    for (j = 1; j < base; j++) {
-      cnt[j] += cnt[j-1];
-    }
+		for (j = l; j <= r; j++) {
+			cnt[(u[pin][j].first >> (i << 3)) & 255]++;
+		}
 
-    for (j = r; j >= l; j--) {
-      z = ((u[pin][j].fi >> (i << 3)) & 255);
-      u[pin^1][l + (--cnt[z])] = u[pin][j];
-    }
-  }
+		for (j = 1; j < base; j++) {
+			cnt[j] += cnt[j-1];
+		}
 
-  for (i = l; i <= r; i++) {
-    v[i].fi = u[pin][i].fi + mel;
-    v[i].se = u[pin][i].se;
-  }
+		for (j = r; j >= l; j--) {
+			z = ((u[pin][j].first >> (i << 3)) & 255);
+			u[pin^1][l + (--cnt[z])] = u[pin][j];
+		}
+	}
+
+	for (i = l; i <= r; i++) {
+		v[i].first = u[pin][i].first + mel;
+		v[i].second = u[pin][i].second;
+	}
 }
 
-struct HashedString {
-  int n;
-  string s;
-  vector<FPii> p27, hhPref;
-  FPii mod;
+namespace xoshiro256pp {
+	///Written in 2019 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+	///https://prng.di.unimi.it/splitmix64.c
+	///https://prng.di.unimi.it/xoshiro256plusplus.c
+	///https://vigna.di.unimi.it/ftp/papers/xorshift.pdf
 
-  HashedString(string s_, FPii mod_) {
-    n = sz(s_);
-    p27.resize(n+1);
-    hhPref.resize(n+1);
-    s = " " + s_;
-    mod = mod_;
+	static inline uint64_t rotl(const uint64_t x, int k) {
+		return (x << k) | (x >> (64 - k));
+	}
 
-    p27[0] = FPii(1, 1);
-    hhPref[0] = FPii(0, 0);
-    for (int i = 1; i <= n; i++) {
-      p27[i].fi = (ll)p27[i-1].fi * 27 % mod.fi;
-      p27[i].se = (ll)p27[i-1].se * 27 % mod.se;
+	///folosesc splitmix64 ca sa initializez starea lui xoshiro256++. oricum il folosesc doar pentru 1 valoare dupa init.
+	inline uint64_t seed_and_get(uint64_t hh1, uint64_t hh2) {
+		hh1 += 0x9e3779b97f4a7c15; ///s[0] din xoshiro256plusplus.
+		hh1 = (hh1 ^ (hh1 >> 30)) * 0xbf58476d1ce4e5b9;
+		hh1 = (hh1 ^ (hh1 >> 27)) * 0x94d049bb133111eb;
+		hh1 = hh1 ^ (hh1 >> 31);
 
-      hhPref[i].fi = ((ll)hhPref[i-1].fi * 27 + s[i]-'a'+1) % mod.fi;
-      hhPref[i].se = ((ll)hhPref[i-1].se * 27 + s[i]-'a'+1) % mod.se;
-    }
-  }
+		hh2 += 0x3c6ef372fe94f82a; ///s[3] din xoshiro256plusplus. 0x9e3779b97f4a7c15 * 2 - 2**64.
+		hh2 = (hh2 ^ (hh2 >> 30)) * 0xbf58476d1ce4e5b9;
+		hh2 = (hh2 ^ (hh2 >> 27)) * 0x94d049bb133111eb;
+		hh2 = hh2 ^ (hh2 >> 31);
 
-  ///returns the corresponding hash for the [l..r] string.
-  void cut(int l, int r, FPii &ans) {
-    ans.fi = hhPref[r].fi - (ll)hhPref[l-1].fi * p27[r-l+1].fi % mod.fi + mod.fi;
-    ans.se = hhPref[r].se - (ll)hhPref[l-1].se * p27[r-l+1].se % mod.se + mod.se;
-    if (ans.fi >= mod.fi) ans.fi -= mod.fi;
-    if (ans.se >= mod.se) ans.se -= mod.se;
-  }
-};
+		return rotl(hh1 + hh2, 23) + hh1;
+	}
+}
 
 class ExpoSizeStrSrc {
 private:
-  const FPii mod = FPii(1000000007, 1000000009);
-  static const int maxn = 100000, ml2 = 17;
+	static constexpr uint32_t ct229 = (1 << 29) - 1;
+	static constexpr uint64_t M61 = (1ULL << 61) - 1, M61_2x = M61 * 2;
+	static constexpr int maxn = 100'000, ml2 = 17;
 
-  int g[maxn*ml2+1][ml2+1]; ///g[..][0] = size.
-  int id[maxn+1][ml2+1]; ///id[i][j] = at what index in g will I find s[i..i+(1<<j)-1].
-  FPii idToHhAsoc[maxn*ml2+1]; ///give DAG id => get associated hash for the respective node.
-  int remainingIds[maxn*ml2+1]; ///what ids remain after compression? their number is kept in g[0][0].
+	///trie built from dictionary entries.
+	struct TrieNode {
+		std::vector<int> indexesEndingHere; ///the indexes whose dictionary strings end here.
+		std::map<uint64_t, TrieNode *> sons; ///do I have a son with some associated hash?
+		std::vector<std::pair<int, int>> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
+	};
 
-  int leverage[maxn*ml2+1];
-  FPii hhAsoc[maxn+1][ml2+1]; ///hhAsoc[i][j] = string.cut(i, i+(1<<j)-1).
-  FPii hhG[maxn+1][ml2+1]; ///associated hash for the id[i][j] subtree.
-  FPllPii hhGToId[maxn*ml2+1]; ///<hhG of (i, j), (i, j)>.
-  bool gIdTakenHelp[maxn*ml2+1]; ///must look out for duplicates when eventually building g.
+	const int TNBufSz = 8192;
+	int TNBufInd = TNBufSz;
+	TrieNode *TNBuffer = nullptr;
 
-  ///trie built from dictionary entries.
-  struct TrieNode {
-    vi indexesEndingHere; ///the indexes whose dictionary strings end here.
-    map<FPii, TrieNode *> sons; ///do I have a son with some associated hash?
-    vector<FPii> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
-  };
+	TrieNode *trieNodeAlloc() {
+		if (TNBufInd >= TNBufSz) {
+			TNBuffer = new TrieNode[TNBufSz];
+			TNBufInd = 0;
+		}
 
-  const int TNBufSz = 8192;
-  int TNBufInd = TNBufSz;
-  TrieNode *TNBuffer;
+		return &TNBuffer[TNBufInd++];
+	}
 
-  TrieNode *trieNodeAlloc() {
-    if (TNBufInd >= TNBufSz) {
-      TNBuffer = new TrieNode[TNBufSz];
-      TNBufInd = 0;
-    }
+	std::pair<int64_t, int64_t> base, basePow[maxn+1], hhPref[maxn+1]; ///the randomly chosen bases, their powers, and
+																	   ///the hash prefixes of s.
+	std::pair<uint64_t, uint64_t> logOtp[ml2]; ///keep the one time pads for subsequences of lengths 1, 2, 4, ...
+	uint64_t hash[(1<<ml2)*ml2]; ///effectively the hashes from the DAG nodes. lazily calculated in massSearch (computed
+								 ///when propagating from the starter node, used later). call as hash[id].
+	std::pair<uint64_t, int> subtreeHash[(1<<ml2)*ml2]; ///first = hash, second = id.
+	int id[(1<<ml2)*ml2]; ///in whom was a node united.
+	int leverage[(1<<ml2)*ml2]; ///lev[x] = how many nodes were united in x. also consider x when counting.
+	int cntStarterNodeChildren = 0, starterNodeChildren[maxn*ml2]; ///post compression, who are the starter node's children?
 
-    return &TNBuffer[TNBufInd++];
-  }
+	int n, strE2 = 0; ///2^strE2 is the smallest power of 2 that is >= n.
+	std::string s;
+
+	///a1 = a1 * b1 % M61.
+	///a2 = a2 * b2 % M61.
+	static void mul2x(int64_t &a1, const int64_t &b1, int64_t &a2, const int64_t &b2) {
+		uint64_t a1_hi = a1 >> 32, a1_lo = (uint32_t)a1, b1_hi = b1 >> 32, b1_lo = (uint32_t)b1,
+				a2_hi = a2 >> 32, a2_lo = (uint32_t)a2, b2_hi = b2 >> 32, b2_lo = (uint32_t)b2,
+				ans_1 = 0, ans_2 = 0, tmp_1 = 0, tmp_2 = 0;
+
+		tmp_1 = a1_hi * b1_lo + a1_lo * b1_hi;
+		tmp_2 = a2_hi * b2_lo + a2_lo * b2_hi;
+
+		tmp_1 = ((tmp_1 & ct229) << 32) + (tmp_1 >> 29);
+		tmp_2 = ((tmp_2 & ct229) << 32) + (tmp_2 >> 29);
+
+		tmp_1 += (a1_hi * b1_hi) << 3;
+		tmp_2 += (a2_hi * b2_hi) << 3;
+
+		ans_1 = (tmp_1 >> 61) + (tmp_1 & M61);
+		ans_2 = (tmp_2 >> 61) + (tmp_2 & M61);
+
+		tmp_1 = a1_lo * b1_lo;
+		tmp_2 = a2_lo * b2_lo;
+
+		ans_1 += (tmp_1 >> 61) + (tmp_1 & M61);
+		ans_2 += (tmp_2 >> 61) + (tmp_2 & M61);
+
+		ans_1 = (ans_1 >= M61_2x? ans_1 - M61_2x: (ans_1 >= M61? ans_1 - M61: ans_1));
+		ans_2 = (ans_2 >= M61_2x? ans_2 - M61_2x: (ans_2 >= M61? ans_2 - M61: ans_2));
+
+		a1 = ans_1;
+		a2 = ans_2;
+	}
+
+	///128bit hash ---(xorshift)---> uniform spread that fits in 8 bytes.
+	static uint64_t reduceHash(std::pair<int64_t, int64_t> &hh, std::pair<uint64_t, uint64_t> otp) {
+		otp.first ^= hh.first;
+		otp.second ^= hh.second;
+
+		return xoshiro256pp::seed_and_get(otp.first, otp.second);
+	}
 
 public:
-  ExpoSizeStrSrc(){}
+	TrieNode *trieRoot = trieNodeAlloc();
+	std::vector<int> massSearchResults; ///results after mass-search. how many times does .. appear in s?
 
-  TrieNode *trieRoot = trieNodeAlloc();
-  vi massSearchResults; ///results after mass-search. how many times does .. appear in s?
+	ExpoSizeStrSrc(std::string &s_) {
+		s = std::move(s_);
+		n = (int)s.size();
 
-  ///builds the DAG for the given string.
-  void init(string s) {
-    int n = sz(s);
-    HashedString hs(s, mod);
+		int i, j, z;
 
-    trieRoot->idLevsCurrentlyHere.pb(FPii(0, inf));
+		///current time, current clock cycle count, heap address given by the OS. https://codeforces.com/blog/entry/60442
+		std::seed_seq seq {
+				(uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count(),
+				(uint64_t) __builtin_ia32_rdtsc(),
+				(uint64_t) (uintptr_t) std::make_unique<char>().get()
+		};
 
-    int i, j, z;
-    int gNodeCnt = 1;
-    for (i = 1; i <= n; i++) {
-      for (j = 0; i+(1<<j)-1 <= n; j++) {
-        leverage[gNodeCnt] = 1;
-        hs.cut(i, i+(1<<j)-1, hhAsoc[i][j]);
-        idToHhAsoc[gNodeCnt] = hhAsoc[i][j];
-        id[i][j] = gNodeCnt++;
-      }
-    }
+		std::mt19937_64 mt(seq);
+		std::uniform_int_distribution<int64_t> baseDist(27, M61 - 1);
+		std::uniform_int_distribution<uint64_t> otpDist(0, ULLONG_MAX);
+		base = std::make_pair(baseDist(mt), baseDist(mt)); ///uniformly and randomly choose 2 bases to use.
 
-    ///build hashes for g's subtrees.
-    for (j = 0; (1<<j) <= n; j++) {
-      for (i = 1; i+(1<<j)-1 <= n; i++) {
-        hs.cut(i, min(n, i+(1<<(j+1))-2), hhG[i][j]);
-      }
-    }
+		while (base.second == base.first) {
+			base.second = baseDist(mt);
+		}
 
-    ///if there are 2 nodes in the DAG which share the same hhG (=> same hhAsoc as well), unite them.
-    ///same hhAsoc => (high probability) same substring retained.
-    ///same hhG => (high probability) exactly the same subtree.
+		///logOtp is not used in the constructor. here we need otps for lengths 1, 3, 7, ...
+		///1, 2, 4, ... are used in queries.
+		for (j = 0; (1<<j) <= n; j++) {
+			logOtp[j].first = otpDist(mt);
+			logOtp[j].second = otpDist(mt);
+		}
 
-    int szh = 0;
-    for (i = 1; i <= n; i++) {
-      for (j = 0; i+(1<<j)-1 <= n; j++) {
-        hhGToId[szh].fi = ((ll)hhG[i][j].fi << 32) | hhG[i][j].se;
-        hhGToId[szh].se = FPii(i, j);
-        szh++;
-      }
-    }
+		///compute base powers, hashes for the prefixes, strE2.
+		basePow[0] = std::make_pair(1, 1);
+		hhPref[0] = std::make_pair(0, 0);
+		for (i = 1; i <= n; i++) {
+			basePow[i] = basePow[i-1];
+			mul2x(basePow[i].first, base.first, basePow[i].second, base.second);
 
-    radixSortPairs<FPllPii>(0, szh-1, hhGToId);
+			hhPref[i] = hhPref[i-1];
+			mul2x(hhPref[i].first, base.first, hhPref[i].second, base.second);
 
-    z = 0;
-    while (z < szh) {
-      i = j = z;
-      while (i < szh && hhGToId[i].fi == hhGToId[z].fi) {
-        if (hhGToId[i].se < hhGToId[j].se) {
-          j = i;
-        }
+			hhPref[i].first += s[i-1] - 'a' + 1;
+			hhPref[i].second += s[i-1] - 'a' + 1;
 
-        i++;
-      }
+			hhPref[i].first = (hhPref[i].first >= M61? hhPref[i].first - M61: hhPref[i].first);
+			hhPref[i].second = (hhPref[i].second >= M61? hhPref[i].second - M61: hhPref[i].second);
+		}
 
-      ///[z, i) have the same hhG. unite them, but merge in the node with the min id (j) (ie the one that appears first
-      ///and in case of equality is the shortest). (helps determining the position of the first match).
-      for (; z < i; z++) {
-        if (z != j) {
-          leverage[id[hhGToId[j].se.fi][hhGToId[j].se.se]] +=
-            leverage[id[hhGToId[z].se.fi][hhGToId[z].se.se]];
-          leverage[id[hhGToId[z].se.fi][hhGToId[z].se.se]] = 0;
+		while ((1<<strE2) < n) {
+			strE2++;
+		}
 
-          id[hhGToId[z].se.fi][hhGToId[z].se.se] = id[hhGToId[j].se.fi][hhGToId[j].se.se];
-        }
-      }
-    }
+		///compute the subtree hashes.
+		std::pair<int64_t, int64_t> subtractedHash[26];
+		std::pair<uint64_t, uint64_t> otp; ///the subtrees have associated substring lengths of 1, 3, 7, ...
 
-    ///finally build the graph.
-    int originalId = 1;
-    for (i = 1; i <= n; i++) {
-      for (j = 0; i+(1<<j)-1 <= n; j++, originalId++) {
-        ///edges from g[0].
-        if (leverage[originalId] != 0) {
-          remainingIds[++g[0][0]] = originalId;
-        }
+		int treeId = 0, subtreeHashSize = 0;
+		for (j = 0; (1<<j) <= n; j++) {
+			if (j == 0) {
+				otp = logOtp[0]; ///obligated to use the already generated value for length = 1.
+			} else {
+				otp.first = otpDist(mt);
+				otp.second = otpDist(mt);
+			}
 
-        ///where can I go from s[i..i+(1<<j)-1]?
-        if (g[id[i][j]][0] == 0) {
-          for (z = 0; z < j; z++) { ///!! z < j.
-            if (i+(1<<j)+(1<<z)-1 <= n && !gIdTakenHelp[id[i+(1<<j)][z]]) {
-              g[id[i][j]][0]++;
-              g[id[i][j]][g[id[i][j]][0]] = id[i+(1<<j)][z];
-              gIdTakenHelp[id[i+(1<<j)][z]] = true;
-            }
-          }
+			int len = std::min((1<<(j+1)) - 1, n);
 
-          for (z = 1; z <= g[id[i][j]][0]; z++) {
-            gIdTakenHelp[g[id[i][j]][z]] = false;
-          }
-        }
-      }
-    }
-  }
+			///precalculating what we will decrease while rolling the hash.
+			///subtractedHash[z] = 27 ** (len - 1) * conv('a' + z). conv('a') = 1.
+			subtractedHash[0] = basePow[len - 1];
+			for (z = 1; z < 26; z++) {
+				subtractedHash[z].first = subtractedHash[z-1].first + basePow[len - 1].first;
+				subtractedHash[z].second = subtractedHash[z-1].second + basePow[len - 1].second;
 
-  ///how many times does t appear in s?
-  void insertQueriedString(string t) {
-    massSearchResults.pb(0);
-    if (sz(t) > maxn || sz(t) <= 0) return;
+				subtractedHash[z].first = (subtractedHash[z].first >= M61? subtractedHash[z].first - M61: subtractedHash[z].first);
+				subtractedHash[z].second = (subtractedHash[z].second >= M61? subtractedHash[z].second - M61: subtractedHash[z].second);
+			}
 
-    HashedString ht(t, mod);
+			///if the subtree hash would want more than we could possibly get from s, we will put just as much as we can.
+			std::pair<int64_t, int64_t> hh(0, 0), tmp;
+			for (i = 0; i < len; i++) {
+				mul2x(hh.first, base.first, hh.second, base.second);
+				hh.first += s[i] - 'a' + 1;
+				hh.second += s[i] - 'a' + 1;
 
-    int i, j, z;
-    TrieNode *trieNow = trieRoot, *trieNext = NULL;
-    FPii hh;
-    for (i = ml2, z = 1; i >= 0; i--) {
-      if (sz(t) & (1<<i)) {
-        ht.cut(z, z+(1<<i)-1, hh);
-        z += (1<<i);
+				hh.first = (hh.first >= M61? hh.first - M61: hh.first);
+				hh.second = (hh.second >= M61? hh.second - M61: hh.second);
+			}
 
-        auto it = trieNow->sons.find(hh);
-        if (it != trieNow->sons.end()) {
-          trieNow = it->se;
-        } else {
-          trieNext = trieNodeAlloc();
-          trieNow->sons[hh] = trieNext;
-          trieNow = trieNext;
-        }
-      }
-    }
+			treeId = j * (1<<strE2);
 
-    trieNow->indexesEndingHere.pb(sz(massSearchResults) - 1);
-  }
+			subtreeHash[subtreeHashSize++] = std::make_pair(reduceHash(hh, otp), treeId);
+			treeId++;
 
-  ///propagates what is in the given trie node.
-  void massSearch(TrieNode *trieNow) {
-    if (!trieNow) return;
+			for (i = 1; i + (1<<j) - 1 < n; i++) {
+				if (i + len-1 < n) {
+					hh.first -= subtractedHash[s[i-1] - 'a'].first;
+					hh.second -= subtractedHash[s[i-1] - 'a'].second;
 
-    int levSum = 0;
-    for (FPii &x: trieNow->idLevsCurrentlyHere) {
-      levSum += x.se;
-    }
+					hh.first = (hh.first < 0? hh.first + M61: hh.first);
+					hh.second = (hh.second < 0? hh.second + M61: hh.second);
 
-    for (int x: trieNow->indexesEndingHere) {
-      massSearchResults[x] = levSum;
-    }
+					mul2x(hh.first, base.first, hh.second, base.second);
+					hh.first += s[i+len-1] - 'a' + 1;
+					hh.second += s[i+len-1] - 'a' + 1;
 
-    if (trieNow->sons.empty()) {
-      return;
-    }
+					hh.first = (hh.first >= M61? hh.first - M61: hh.first);
+					hh.second = (hh.second >= M61? hh.second - M61: hh.second);
+				} else {
+					tmp = std::pair<int64_t, int64_t>(s[i-1] - 'a' + 1, s[i-1] - 'a' + 1);
+					mul2x(tmp.first, basePow[n-i].first, tmp.second, basePow[n-i].second);
+					hh.first -= tmp.first;
+					hh.second -= tmp.second;
 
-    int i, nod, nn, levChain;
+					hh.first = (hh.first < 0? hh.first + M61: hh.first);
+					hh.second = (hh.second < 0? hh.second + M61: hh.second);
+				}
 
-    ///transform trieNow->sons in a sorted array.
-    vector<pair<FPii, TrieNode *>> sons;
-    sons.reserve(sz(trieNow->sons));
-    for (auto &x: trieNow->sons) sons.pb(x);
+				subtreeHash[subtreeHashSize++] = std::make_pair(reduceHash(hh, otp), treeId);
+				treeId++;
+			}
+		}
 
-    for (FPii &x: trieNow->idLevsCurrentlyHere) {
-      nod = x.fi; levChain = x.se;
+		///sort all the subtree hashes. afterwards, we can compress the duplicates. (update the leverages, ids)
+		radixSortPairs<std::pair<uint64_t, int>>(subtreeHash, 0, subtreeHashSize-1);
 
-      for (i = 1; i <= g[nod][0]; i++) {
-        if (nod == 0) nn = remainingIds[i]; else nn = g[nod][i];
+		i = 0;
+		while (i < subtreeHashSize) {
+			j = i; ///go through all indexes with the same hash as subtreeHash[i].
+			z = i; ///keep in z the index with the minimum id. also helpful when trying to solve problems like
+				   ///"find the first occurence of the words from ts in s"
+			while (j < subtreeHashSize && subtreeHash[j].first == subtreeHash[i].first) {
+				z = (subtreeHash[j].second < subtreeHash[z].second? j: z);
+				j++;
+			}
 
-        auto it = lower_bound(all(sons), make_pair(idToHhAsoc[nn], (TrieNode *)NULL),
-                              [](const pair<FPii, TrieNode *> &a, const pair<FPii, TrieNode *> &b) {
-          if (a.fi.fi != b.fi.fi) return a.fi.fi < b.fi.fi;
-          return a.fi.se < b.fi.se;
-        });
+			///unite all other nodes with the same hash in z.
+			leverage[subtreeHash[z].second] = j - i;
+			starterNodeChildren[cntStarterNodeChildren++] = subtreeHash[z].second;
+			for (; i < j; i++) {
+				id[subtreeHash[i].second] = subtreeHash[z].second;
+			}
+		}
 
-        if (it != sons.end() && it->fi == idToHhAsoc[nn]) {
-          if (sz(it->se->idLevsCurrentlyHere) == 0 || it->se->idLevsCurrentlyHere.back().fi != nn) {
-            it->se->idLevsCurrentlyHere.pb(FPii(nn, min(levChain, leverage[nn])));
-          } else {
-            ///duplicates may exist. possible to have multiple descendants with the same index after compression.
-            ///because of the mode in which I compress (merge in the lowest index) => the indexes from it->se->idLevs.. are ordered increasingly.
-            it->se->idLevsCurrentlyHere.back().se += min(levChain, leverage[nn]);
-          }
-        }
-      }
-    }
+		trieRoot->idLevsCurrentlyHere.emplace_back(-1, INT_MAX); ///-1 is the starter node.
+	}
 
-    for (auto &x: trieNow->sons) {
-      if (!x.se->idLevsCurrentlyHere.empty()) {
-        massSearch(x.se);
-      }
-    }
-  }
+	/**
+	 * How many times does a string appear in s?
+	 * @param t the string in question.
+	 */
+	void insertQueriedString(std::string &t) {
+		massSearchResults.push_back(0);
+		if (t.size() > maxn || t.empty()) {
+			return;
+		}
+
+		int i, j, z;
+		TrieNode *trieNow = trieRoot, *trieNext = nullptr;
+		std::pair<int64_t, int64_t> hh;
+		uint64_t hh_red;
+
+		///split t into a substring chain, each substring having a distinct power of 2 length. add the chain to the trie.
+		for (i = ml2, z = 0; i >= 0; i--) {
+			if (t.size() & (1<<i)) {
+				hh = std::make_pair(0, 0);
+				for (j = z + (1<<i); z < j; z++) {
+					mul2x(hh.first, base.first, hh.second, base.second);
+					hh.first += t[z] - 'a' + 1;
+					hh.second += t[z] - 'a' + 1;
+
+					hh.first = (hh.first >= M61? hh.first - M61: hh.first);
+					hh.second = (hh.second >= M61? hh.second - M61: hh.second);
+				}
+
+				hh_red = reduceHash(hh, logOtp[i]);
+
+				auto it = trieNow->sons.find(hh_red);
+				if (it != trieNow->sons.end()) {
+					trieNow = it->second;
+				} else {
+					trieNext = trieNodeAlloc();
+					trieNow->sons[hh_red] = trieNext;
+					trieNow = trieNext;
+				}
+			}
+		}
+
+		trieNow->indexesEndingHere.push_back((int)massSearchResults.size() - 1);
+	}
+
+	/**
+	 * Recursively propagates what is in the given trie node.
+	 * @param trieNow current trie node to exploit.
+	 */
+	void massSearch(TrieNode *trieNow) {
+		if (!trieNow) return;
+
+		int levSum = 0; ///compute the sum of leverages of all chains that are in the trie node.
+		for (auto &x: trieNow->idLevsCurrentlyHere) {
+			levSum += x.second;
+		}
+
+		for (int x: trieNow->indexesEndingHere) {
+			massSearchResults[x] = levSum;
+		}
+
+		if (trieNow->sons.empty()) {
+			return;
+		}
+
+		///transform trieNow->sons in a sorted array.
+		int i = 0, cntSons = (int)trieNow->sons.size();
+		std::pair<uint64_t, TrieNode *> sons[cntSons];
+		for (auto &x: trieNow->sons) {
+			sons[i++] = x;
+		}
+
+		int dagNode, nn, levChain, p2, startInd, dagNodeP2 = 0, dagNodeStartInd = 0;
+		std::pair<int64_t, int64_t> hh;
+		uint64_t hh_red;
+
+		int m; ///how many children does the trie node have.
+		for (auto &x: trieNow->idLevsCurrentlyHere) {
+			std::tie(dagNode, levChain) = x;
+
+			///iterate through all of dagNode's children. compute the hashes of their nodes from the DAG. see if the hashes
+			///can be found on some edge that goes out from me (current trie node).
+
+			///count how many children does dagNode have.
+			if (dagNode == -1) { ///am in the starter node.
+				m = cntStarterNodeChildren;
+			} else { ///decode from the dagNode index its length and starting index.
+				dagNodeP2 = 1 << (dagNode >> strE2);
+				dagNodeStartInd = dagNode - (dagNode >> strE2) * (1 << strE2);
+				m = 0;
+				while ((1<<m) < dagNodeP2 && dagNodeStartInd + dagNodeP2 + (1 << m) - 1 < n) {
+					m++;
+				}
+			}
+
+			for (i = 0; i < m; i++) {
+				///compute the hash of the i-th child of dagNode (hhl).
+				///also need the minimum value of the leverages along the current chain (levChain).
+				if (dagNode == -1) {
+					nn = starterNodeChildren[i];
+					levChain = leverage[nn]; ///sthe lowest leverage on a chain is always the first. in this case it's leverage[nn].
+
+					p2 = 1 << (nn >> strE2); ///length of the string associated to nn.
+					startInd = nn - (nn >> strE2) * (1 << strE2); ///the index at which the associated string of nn begins in s.
+
+					///hh = hhPref[startInd + p2] - hhPref[startInd] * basePow[p2].
+					hh = hhPref[startInd];
+					mul2x(hh.first, basePow[p2].first, hh.second, basePow[p2].second);
+
+					hh.first = hhPref[startInd + p2].first - hh.first;
+					hh.second = hhPref[startInd + p2].second - hh.second;
+
+					hh.first = (hh.first < 0? hh.first + M61: hh.first);
+					hh.second = (hh.second < 0? hh.second + M61: hh.second);
+
+					hh_red = reduceHash(hh, logOtp[nn >> strE2]);
+					hash[nn] = hh_red; ///keep the value. might use it later in the search.
+				} else {
+					nn = id[(1 << strE2) * i + dagNodeStartInd + dagNodeP2]; ///we're sure that id[dagNode] = dagNode. it doesn't necessarily mean that id[nn] = nn in this case.
+					hh_red = hash[nn]; ///hash was already precalculated when extending from the starter node.
+				}
+
+				auto it = std::lower_bound(sons, sons + cntSons, std::make_pair(hh_red, nullptr),
+										   [](const std::pair<uint64_t, TrieNode *> &a, std::pair<uint64_t, TrieNode *> b) {
+											   return a.first < b.first;
+										   });
+
+				if (it != sons + cntSons && it->first == hh_red) {
+					if (it->second->idLevsCurrentlyHere.empty() || it->second->idLevsCurrentlyHere.back().first != nn) {
+						it->second->idLevsCurrentlyHere.emplace_back(nn, levChain);
+					} else {
+						///duplicates may exist. possible to have multiple descendants with the same index after compression.
+						///because of the mode in which we compress (merge in the lowest index) =>
+						///we currently deal with a duplicate <=> nn == to the last id in it->second->idLevsCurrentlyHere.
+						it->second->idLevsCurrentlyHere.back().second += levChain;
+					}
+				}
+			}
+		}
+
+		for (auto &x: trieNow->sons) {
+			if (!x.second->idLevsCurrentlyHere.empty()) {
+				massSearch(x.second);
+			}
+		}
+	}
 };
 
-ExpoSizeStrSrc E3S;
-
 int main() {
-  ios::sync_with_stdio(false); cin.tie(0); cout.tie(0);
+	std::ios::sync_with_stdio(false); std::cin.tie(nullptr); std::cout.tie(nullptr);
 
-  string s; cin >> s;
+	std::string s; std::cin >> s;
 
-  E3S.init(s);
+	ExpoSizeStrSrc *E3S = new ExpoSizeStrSrc(s);
 
-  int q; cin >> q;
+	int n; std::cin >> n;
+	std::string t;
+	for (int i = 0; i < n; i++) {
+		std::cin >> t;
+		E3S->insertQueriedString(t);
+	}
 
-  string t;
-  for (int _ = 0; _ < q; _++) {
-    cin >> t;
-    E3S.insertQueriedString(t);
-  }
+	E3S->massSearch(E3S->trieRoot);
+	for (int x: E3S->massSearchResults) {
+		std::cout << x << '\n';
+	}
 
-  E3S.massSearch(E3S.trieRoot);
+	delete E3S;
 
-  for (int x: E3S.massSearchResults) {
-    cout << x << '\n';
-  }
-
-  return 0;
+	return 0;
 }
+
