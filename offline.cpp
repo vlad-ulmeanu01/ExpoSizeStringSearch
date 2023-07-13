@@ -74,14 +74,14 @@ namespace xoshiro256pp {
 		return (x << k) | (x >> (64 - k));
 	}
 
-	///folosesc splitmix64 ca sa initializez starea lui xoshiro256++. oricum il folosesc doar pentru 1 valoare dupa init.
+	///using splitmix64 to initialize the state of xoshiro256++. we use it for only one value after each re-seeding.
 	inline uint64_t seed_and_get(uint64_t hh1, uint64_t hh2) {
-		hh1 += 0x9e3779b97f4a7c15; ///s[0] din xoshiro256plusplus.
+		hh1 += 0x9e3779b97f4a7c15; ///s[0] from xoshiro256plusplus.
 		hh1 = (hh1 ^ (hh1 >> 30)) * 0xbf58476d1ce4e5b9;
 		hh1 = (hh1 ^ (hh1 >> 27)) * 0x94d049bb133111eb;
 		hh1 = hh1 ^ (hh1 >> 31);
 
-		hh2 += 0x3c6ef372fe94f82a; ///s[3] din xoshiro256plusplus. 0x9e3779b97f4a7c15 * 2 - 2**64.
+		hh2 += 0x3c6ef372fe94f82a; ///s[3] from xoshiro256plusplus. 0x9e3779b97f4a7c15 * 2 - 2**64.
 		hh2 = (hh2 ^ (hh2 >> 30)) * 0xbf58476d1ce4e5b9;
 		hh2 = (hh2 ^ (hh2 >> 27)) * 0x94d049bb133111eb;
 		hh2 = hh2 ^ (hh2 >> 31);
@@ -116,11 +116,9 @@ private:
 		return &TNBuffer[TNBufInd++];
 	}
 
-	std::pair<int64_t, int64_t> base, basePow[maxn+1], hhPref[maxn+1]; ///the randomly chosen bases, their powers, and
-																	   ///the hash prefixes of s.
+	std::pair<int64_t, int64_t> base, basePow[maxn+1], hhPref[maxn+1]; ///the randomly chosen bases, their powers, and the hash prefixes of s.
 	std::pair<uint64_t, uint64_t> logOtp[ml2]; ///keep the one time pads for subsequences of lengths 1, 2, 4, ...
-	uint64_t hash[(1<<ml2)*ml2]; ///effectively the hashes from the DAG nodes. lazily calculated in massSearch (computed
-								 ///when propagating from the starter node, used later). call as hash[id].
+	uint64_t hash[(1<<ml2)*ml2]; ///effectively the hashes from the DAG nodes. lazily calculated in massSearch (computed when propagating from the starter node, used later). call as hash[id].
 	std::pair<uint64_t, int> subtreeHash[(1<<ml2)*ml2]; ///first = hash, second = id.
 	int id[(1<<ml2)*ml2]; ///in whom was a node united.
 	int leverage[(1<<ml2)*ml2]; ///lev[x] = how many nodes were united in x. also consider x when counting.
