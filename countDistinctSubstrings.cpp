@@ -1,6 +1,6 @@
 ///PTM HAI
 #pragma GCC optimize("Ofast,no-stack-protector,unroll-loops,fast-math,O3")
-#pragma GCC target("sse,sse2,sse3,sse3,sse4,popcnt,abm,mmx,avx,avx2,tune=native")
+#pragma GCC target("sse,sse2,sse3,sse3,sse4,popcnt,abm,mmx,avx,avx2")
 
 #include <algorithm>
 #include <iostream>
@@ -11,6 +11,7 @@
 #include <chrono>
 #include <vector>
 #include <random>
+#include <memory>
 #include <stack>
 #include <cmath>
 #include <map>
@@ -26,7 +27,7 @@ template<typename T>
 void radixSortPairs(T *v, int l, int r) {
 	const int base = 256;
 
-	std::array<std::vector<T>, 2> u;
+	std::vector<T> u[2];
 	u[0].resize(r+1); u[1].resize(r+1);
 	int cnt[base] = {0};
 
@@ -94,35 +95,15 @@ class ExpoSizeStrSrc {
 private:
 	static constexpr uint32_t ct229 = (1 << 29) - 1;
 	static constexpr uint64_t M61 = (1ULL << 61) - 1, M61_2x = M61 * 2;
-	static constexpr int maxn = 100'000, ml2 = 17;
-
-	///trie built from dictionary entries.
-	struct TrieNode {
-		std::vector<int> indexesEndingHere; ///the indexes whose dictionary strings end here.
-		std::map<uint64_t, TrieNode *> sons; ///do I have a son with some associated hash?
-		std::vector<std::pair<int, int>> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
-	};
-
-	const int TNBufSz = 4096; ///8192.
-	int TNBufInd = TNBufSz;
-	TrieNode *TNBuffer = nullptr;
-
-	TrieNode *trieNodeAlloc() {
-		if (TNBufInd >= TNBufSz) {
-			TNBuffer = new TrieNode[TNBufSz];
-			TNBufInd = 0;
-		}
-
-		return &TNBuffer[TNBufInd++];
-	}
+	static constexpr int maxn = 500'000, ml2 = 19;
 
 	std::pair<int64_t, int64_t> base, basePow[maxn+1], hhPref[maxn+1]; ///the randomly chosen bases, their powers, and the hash prefixes of s.
 	std::pair<uint64_t, uint64_t> logOtp[ml2]; ///keep the one time pads for subsequences of lengths 1, 2, 4, ...
 	uint64_t hash[(1<<ml2)*ml2]; ///effectively the hashes from the DAG nodes. lazily calculated in massSearch (computed when propagating from the starter node, used later). call as hash[id].
 	std::pair<uint64_t, int> subtreeHash[(1<<ml2)*ml2]; ///first = hash, second = id.
 	int id[(1<<ml2)*ml2]; ///in whom was a node united.
-	int leverage[(1<<ml2)*ml2]; ///lev[x] = how many nodes were united in x. also consider x when counting.
 	int cntStarterNodeChildren = 0, starterNodeChildren[maxn*ml2]; ///post compression, who are the starter node's children?
+	std::pair<uint64_t, int> sonsHashes[maxn*ml2]; ///first = hash, second = id. used by the massSearch function.
 
 	int n, strE2 = 0; ///2^strE2 is the smallest power of 2 that is >= n.
 	std::string s;
@@ -168,12 +149,18 @@ private:
 	}
 
 public:
-	TrieNode *trieRoot = trieNodeAlloc();
-	std::vector<int> massSearchResults; ///results after mass-search. how many times does .. appear in s?
+	int64_t cntDistinctSubstrings; ///results after mass-search.
+
+	int massSearchArray[1+maxn+maxn*ml2]; ///since I can only propagate n + nlog2n tokens, I'd keep them whole in an array
+	///rather than having vector<vi>s in the massSearch.
+	int massSearchIndex; ///the first unused index in the massSearchArray.
 
 	ExpoSizeStrSrc(std::string &s_) {
 		s = std::move(s_);
 		n = (int)s.size();
+
+		cntDistinctSubstrings = 0;
+		massSearchIndex = 0;
 
 		int i, j, z;
 
@@ -292,7 +279,7 @@ public:
 			}
 		}
 
-		///sort all the subtree hashes. afterwards, we can compress the duplicates. (update the leverages, ids)
+		///sort all the subtree hashes. afterwards, we can compress the duplicates. (also update the ids)
 		radixSortPairs<std::pair<uint64_t, int>>(subtreeHash, 0, subtreeHashSize-1);
 
 		i = 0;
@@ -306,97 +293,61 @@ public:
 			}
 
 			///unite all other nodes with the same hash in z.
-			leverage[subtreeHash[z].second] = j - i;
 			starterNodeChildren[cntStarterNodeChildren++] = subtreeHash[z].second;
 			for (; i < j; i++) {
 				id[subtreeHash[i].second] = subtreeHash[z].second;
 			}
 		}
-
-		trieRoot->idLevsCurrentlyHere.emplace_back(-1, INT_MAX); ///-1 is the starter node.
 	}
 
 	/**
-	 * How many times does a string appear in s?
-	 * @param t the string in question.
+	 * We are in a trie node with only one token. We want to calculate its subtree's contribution to the number
+	 * of distinct substrings. We don't have to propagate anymore to do that. Unique prefix means that
+	 * any continuation is also unique.
+	 * @param x id of the token. we guarantee that id[x] = x.
+	 * @return how much do x's successors in the trie contribute. the token's contribution itself is not counted here.
 	 */
-	void insertQueriedString(std::string &t) {
-		massSearchResults.push_back(0);
-		if (t.size() > maxn || t.empty()) {
-			return;
-		}
-
-		int i, j, z;
-		TrieNode *trieNow = trieRoot, *trieNext = nullptr;
-		std::pair<int64_t, int64_t> hh;
-		uint64_t hh_red;
-
-		///split t into a substring chain, each substring having a distinct power of 2 length. add the chain to the trie.
-		for (i = ml2, z = 0; i >= 0; i--) {
-			if (t.size() & (1<<i)) {
-				hh = std::make_pair(0, 0);
-				for (j = z + (1<<i); z < j; z++) {
-					mul2x(hh.first, base.first, hh.second, base.second);
-					hh.first += t[z] - 'a' + 1;
-					hh.second += t[z] - 'a' + 1;
-
-					hh.first = (hh.first >= M61? hh.first - M61: hh.first);
-					hh.second = (hh.second >= M61? hh.second - M61: hh.second);
-				}
-
-				hh_red = reduceHash(hh, logOtp[i]);
-
-				auto it = trieNow->sons.find(hh_red);
-				if (it != trieNow->sons.end()) {
-					trieNow = it->second;
-				} else {
-					trieNext = trieNodeAlloc();
-					trieNow->sons[hh_red] = trieNext;
-					trieNow = trieNext;
-				}
-			}
-		}
-
-		trieNow->indexesEndingHere.push_back((int)massSearchResults.size() - 1);
+	inline int tokenSuccesorsContribution(int x) {
+		int lengthX = 1 << (x >> strE2); ///the length of x's node.
+		int indexEndX = x - (x >> strE2) * (1 << strE2) + lengthX - 1; ///the last index that is part of x. count from 0.
+		return std::min(lengthX - 1, n-1 - indexEndX);
 	}
 
 	/**
 	 * Recursively propagates what is in the given trie node.
-	 * @param trieNow current trie node to exploit.
+	 * @param l index >= 0. used in the massSearchArray.
+	 * @param r index > r.
+	 * the current trie node is implicitly understood to contain the tokens (ids) found in massSearchArray[l..r).
 	 */
-	void massSearch(TrieNode *trieNow) {
-		if (!trieNow) return;
-
-		int levSum = 0; ///compute the sum of leverages of all chains that are in the trie node.
-		for (auto &x: trieNow->idLevsCurrentlyHere) {
-			levSum += x.second;
-		}
-
-		for (int x: trieNow->indexesEndingHere) {
-			massSearchResults[x] = levSum;
-		}
-
-		if (trieNow->sons.empty()) {
+	void massSearch(int l, int r) {
+		if (l == r) {
 			return;
 		}
 
-		///transform trieNow->sons in a sorted array.
-		int i = 0, cntSons = (int)trieNow->sons.size();
-		std::pair<uint64_t, TrieNode *> sons[cntSons];
-		for (auto &x: trieNow->sons) {
-			sons[i++] = x;
+		///all of the current node tokens show the same value of a subtring, just in different areas of the string.
+		if (l > 0) { ///the trie root is a special case.
+			cntDistinctSubstrings++; ///add one to count the trie node effectively.
+
+			///if I only have one token showing the value of a substring, I have a distinct prefix that can't be found
+			///anywhere else in the string, so I can just add all of its possible descendants now and not propagate
+			///anymore.
+			if (r - l == 1) {
+				cntDistinctSubstrings += tokenSuccesorsContribution(massSearchArray[l]);
+				return;
+			}
 		}
 
-		int dagNode, nn, levChain, p2, startInd, dagNodeP2 = 0, dagNodeStartInd = 0;
+		int i, j, z, m, nn, p2, dagNode, startInd, cntSons = 0, dagNodeP2 = 0, dagNodeStartInd = 0;
 		std::pair<int64_t, int64_t> hh;
 		uint64_t hh_red;
 
-		int m; ///how many children does the trie node have.
-		for (auto &x: trieNow->idLevsCurrentlyHere) {
-			std::tie(dagNode, levChain) = x;
+		///for each dagNode (token) in the trie, iterate through all of its DAG children and remember them.
+		///eliminate all duplicates. for each distinct value of a DAG child, we have a new trie child.
+		///ex we are in [aaaa]. s = ...aaaabcd...aaaabce...aaaabcd...aaaaddd...; we will have 2 trie children,
+		/// [bc] with 2 tokens, and [dd] with one token. [bc] has only 2 tokens because the third one is a duplicate.
 
-			///iterate through all of dagNode's children. compute the hashes of their nodes from the DAG. see if the hashes
-			///can be found on some edge that goes out from me (current trie node).
+		for (z = l; z < r; z++) {
+			dagNode = massSearchArray[z];
 
 			///count how many children does dagNode have.
 			if (dagNode == -1) { ///am in the starter node.
@@ -411,11 +362,9 @@ public:
 			}
 
 			for (i = 0; i < m; i++) {
-				///compute the hash of the i-th child of dagNode (hhl).
-				///also need the minimum value of the leverages along the current chain (levChain).
+				///compute the hash of the i-th child of dagNode (hh_red).
 				if (dagNode == -1) {
 					nn = starterNodeChildren[i];
-					levChain = leverage[nn]; ///sthe lowest leverage on a chain is always the first. in this case it's leverage[nn].
 
 					p2 = 1 << (nn >> strE2); ///length of the string associated to nn.
 					startInd = nn - (nn >> strE2) * (1 << strE2); ///the index at which the associated string of nn begins in s.
@@ -437,28 +386,44 @@ public:
 					hh_red = hash[nn]; ///hash was already precalculated when extending from the starter node.
 				}
 
-				auto it = std::lower_bound(sons, sons + cntSons, std::make_pair(hh_red, nullptr),
-										   [](const std::pair<uint64_t, TrieNode *> &a, std::pair<uint64_t, TrieNode *> b) {
-											   return a.first < b.first;
-										   });
-
-				if (it != sons + cntSons && it->first == hh_red) {
-					if (it->second->idLevsCurrentlyHere.empty() || it->second->idLevsCurrentlyHere.back().first != nn) {
-						it->second->idLevsCurrentlyHere.emplace_back(nn, levChain);
-					} else {
-						///duplicates may exist. possible to have multiple descendants with the same index after compression.
-						///because of the mode in which we compress (merge in the lowest index) =>
-						///we currently deal with a duplicate <=> nn == to the last id in it->second->idLevsCurrentlyHere.
-						it->second->idLevsCurrentlyHere.back().second += levChain;
-					}
-				}
+				sonsHashes[cntSons++] = std::make_pair(hh_red, nn);
 			}
 		}
 
-		for (auto &x: trieNow->sons) {
-			if (!x.second->idLevsCurrentlyHere.empty()) {
-				massSearch(x.second);
+		std::sort(sonsHashes, sonsHashes + cntSons);
+
+		///sonsHashes looks like: [(hh_red1, nn1), (hh_red1, nn2), .., (hh_red1, nn3), ...]
+		std::vector<std::pair<int, int>> sonLRs; ///keep <l, r> for each child.
+
+		i = 0;
+		while (i < cntSons) {
+			l = r = massSearchIndex;
+
+			j = i;
+			while (j < cntSons && sonsHashes[j].first == sonsHashes[i].first) {
+				if (l == r || massSearchArray[r-1] != sonsHashes[j].second) {
+					massSearchArray[r++] = sonsHashes[j].second;
+				}
+
+				j++;
 			}
+
+			i = j;
+			if (l+1 == r) {
+				///won't waste space in the array. will compute now the contribution and not propagate. even if the number of tokens that
+				///will propagate is < n + nlog2n, the number of tokens that may exist is O(nlog^2n). we don't want to
+				///allocate that much extra memory.
+
+				cntDistinctSubstrings += 1 + tokenSuccesorsContribution(massSearchArray[l]);
+				massSearchIndex = l;
+			} else {
+				sonLRs.emplace_back(l, r);
+				massSearchIndex = r;
+			}
+		}
+
+		for (std::pair<int, int> &x: sonLRs) {
+			massSearch(x.first, x.second);
 		}
 	}
 };
@@ -470,20 +435,11 @@ int main() {
 
 	ExpoSizeStrSrc *E3S = new ExpoSizeStrSrc(s);
 
-	int n; std::cin >> n;
-	std::string t;
-	for (int i = 0; i < n; i++) {
-		std::cin >> t;
-		E3S->insertQueriedString(t);
-	}
-
-	E3S->massSearch(E3S->trieRoot);
-	for (int x: E3S->massSearchResults) {
-		std::cout << x << '\n';
-	}
+	E3S->massSearchArray[E3S->massSearchIndex++] = -1;
+	E3S->massSearch(0, 1);
+	std::cout << E3S->cntDistinctSubstrings << '\n';
 
 	delete E3S;
 
 	return 0;
 }
-
