@@ -1,8 +1,8 @@
 ///https://cses.fi/problemset/hack/2103/entry/2765885/
 #include "bits/stdc++.h"
-
+ 
 using namespace std;
-
+ 
 struct SufTree {
   const int kMod = 1.0e9 + 7;
   string s;
@@ -94,7 +94,7 @@ struct SufTree {
       return subtree_size[p];
   }
 };
-
+ 
 int main() {
   cin.tie(nullptr);
   ios::sync_with_stdio(false);
@@ -107,7 +107,10 @@ int main() {
   cin >> k;
   while (k--) {
     string p;
-    cin >> p;
+    //cin >> p;
+    int l, r; cin >> l >> r;
+    p = s.substr(l-1, r-l+1);
+ 
     cout << suf.NumOcc(p) << '\n';
   }
 }
