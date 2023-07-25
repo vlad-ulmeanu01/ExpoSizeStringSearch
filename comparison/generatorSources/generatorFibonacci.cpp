@@ -96,11 +96,9 @@ int main(int argc, char **argv) {
   ///argv[4] = mod alegere urmatoarea lungime (0: *2 + 1, 1: +1)
 
   int n = atoi(argv[1]);
-  int m = atoi(argv[2]);
+  ll m = atoll(argv[2]);
   int tipD = atoi(argv[3]);
   int tipNext = atoi(argv[4]);
-
-  ///vreau o distributie care sa incurajeze substringuri identice cu subarbori diferiti.
 
   vector<double> dist;
   if (tipD >= 1 && tipD <= 26) dist = vector<double>(tipD, 1.0 / tipD);
