@@ -13,6 +13,7 @@
 #include <tuple>
 #include <cstring>
 #include <cstdio>
+#include <cctype>
 
 using namespace snort;
 
@@ -24,38 +25,45 @@ class BruteforceMpse : public Mpse
 {
 private:
     struct PatternInfo {
-        std::string pat;
+        std::vector<uint8_t> pat;
         void *user; ///?? de la cine am pattern-ul?
         void *tree; ///detection_option_tree_root_t. am nevoie de cate un obiect tree pentru fiecare match (ca sa stie snort ce pattern-uri sunt gasite).
+        void *neg_list; ///varul lui tree pentru negated.
+        bool no_case; ///true <=> trebuie sa caut case insensitive.
+        bool negated; ///true <=> vreau sa NU gasesc pattern-ul.
 
         ///TODO mare grija cu pointerii. PatternInfo e folosit in std::vector<>...
-        PatternInfo(std::string pat, void *user, void *tree) {
+        PatternInfo(std::vector<uint8_t> pat, void *user, void *tree, void *neg_list, bool no_case, bool negated) {
             this->pat = pat;
+
+            no_case = true; ///?? pare intotdeauna adevarat (?)
+
+            if (no_case) { ///cu ! crapa mai tarziu...
+                for (int i = 0; i < (int)pat.size(); i++) this->pat[i] = tolower(this->pat[i]);
+            }
+
             this->user = user;
             this->tree = tree;
+            this->neg_list = neg_list;
+            this->no_case = no_case;
+            this->negated = negated;
+        }
+
+        bool operator == (const PatternInfo &oth) {
+            return no_case == oth.no_case && pat == oth.pat && negated == oth.negated;
         }
     };
 
     const MpseAgent *agent;
 
-    std::vector<PatternInfo> patterns; ///tine minte si un pointer catre user (???).
-    //FILE *dbg;
-
-    void debug(std::string s) const {
-        //fprintf(dbg, "%s\n", s.c_str());
-        printf("%s\n", s.c_str());
-    }
+    std::vector<PatternInfo> patterns;
 
 public:
     BruteforceMpse(const MpseAgent* agent) : Mpse("bruteforce") {
-        //dbg = fopen("/home/vlad/Documents/SublimeMerge/snort3_demo/tests/search_engines/bruteforce/debug.txt", "w");
-
         this->agent = agent;
     }
 
     ~BruteforceMpse() override {
-        //puts("03/14-06:42:08.719162, 8, TCP, stream_tcp, 238, S2C, 10.9.8.7:80, 10.1.2.3:48620, 1:1:0, allow");
-        //fclose(dbg);
     }
 
     /**
@@ -66,13 +74,14 @@ public:
      * @return 0 for succes.
      */
     int add_pattern(const uint8_t* P, unsigned m, const PatternDescriptor& desc, void* user) override {
-        patterns.emplace_back(std::string((char *) P), user, nullptr);
+        patterns.emplace_back(std::vector<uint8_t>(P, P+m), user, nullptr, nullptr, desc.no_case, desc.negated); ///std::string((char *) P, m)
 
-        //debug("add_pattern: " + patterns.back().pat);
-        //debug("no_case: " + std::to_string(desc.no_case));
-        //debug("negated: " + std::to_string(desc.negated));
-        //debug("literal: " + std::to_string(desc.literal));
-        //debug("multi_match: " + std::to_string(desc.multi_match));
+        for (int i = 0; i < (int)patterns.size() - 1; i++) {
+            if (patterns[i] == patterns.back()) {
+                patterns.pop_back();
+                break;
+            }
+        }
 
         return 0;
     }
@@ -83,17 +92,11 @@ public:
      * @return 0 for succes.
      */
     int prep_patterns(SnortConfig* sc) override {
-        debug("prep_patterns called. patterns size = " + std::to_string(patterns.size()));
-
         for (auto &p: patterns) {
-            agent->build_tree(sc, p.user, &p.tree);
-
-            /*
-            if (p->user) {
-                if (p->negative) ts->agent->negate_list(p->user, &root->pkeyword->neg_list);
-                else ts->agent->build_tree(sc, p->user, &root->pkeyword->rule_option_tree);
+            if (p.user) {
+                if (!p.negated) agent->build_tree(sc, p.user, &p.tree);
+                else agent->negate_list(p.user, &p.neg_list);
             }
-            */
         }
 
         return 0;
@@ -109,25 +112,36 @@ public:
      * @return count of found patterns. (?) if the first pattern was found 2x, and the second one 1x, return 3.
      */
     int _search(const uint8_t* T, int n, MpseMatch match, void* context, int* current_state) override {
-        //debug("search called: T = " + std::string((char *)T) + "END");
         int matches = 0;
-        for (auto &p: patterns) {
-            for (int i = 0; i + p.pat.size() - 1 < n; i++) {
-                int j = 0;
-                while (j < (int)p.pat.size() && T[i + j] == p.pat[j]) j++;
 
-                if (j >= (int)p.pat.size()) {
-                    matches++;
-                    if (match(p.user, p.tree, i, context, nullptr) > 0) { ///(???) cred ca trebuie sa marchez pozitia match-urilor. dc ret > 0, pot sa termin inainte.
-                        debug("search finished by match return.");
-                        return matches;
+        std::vector<uint8_t> T_nocase(T, T+n);
+        for (int i = 0; i < n; i++) {
+            T_nocase[i] = tolower(T_nocase[i]);
+        }
+
+        ///DA. conteaza ordinea forurilor. se pare ca prefera intai match-uri care se termina mai devreme in T.
+        for (int i = 0; i < n; i++) {
+            for (auto &p: patterns) {
+                if (i + (int)p.pat.size() - 1 < n) {
+                    int j = 0;
+
+                    ///(bug snort?) se pare ca pune toate pattern-urile cu p.no_case == true.
+                    if (p.no_case) {
+                        while (j < (int)p.pat.size() && T_nocase[i + j] == p.pat[j]) j++;
+                    } else {
+                        while (j < (int)p.pat.size() && T[i + j] == p.pat[j]) j++;
+                    }
+
+                    if (j >= (int)p.pat.size()) { ///cred ca negated conteaza doar la triere in tree / neg_list?
+                        matches++;
+
+                        if (match(p.user, p.tree, i + j, context, p.neg_list) > 0) {
+                            return matches;
+                        }
                     }
                 }
             }
         }
-
-
-        debug("search finished: matches = " + std::to_string(matches));
 
         return matches;
     }
@@ -137,21 +151,8 @@ public:
      * @return how many patterns do I have.
      */
     int get_pattern_count() const override {
-        debug("get_pattern_count called: " + std::to_string(patterns.size()));
-
         return (int)patterns.size();
     }
-
-    ///mai jos: functii virtuale mostenite, dar care nu apar in scheletul de la lowmem. poate e apelata una dintre ele.
-
-//    void _search(MpseBatch&, MpseType) override {
-//        debug("_search batch called.");
-//    }
-
-//    MpseRespType receive_responses(MpseBatch&, MpseType) override {
-//        debug("receive_responses called.");
-//        return MPSE_RESP_COMPLETE_SUCCESS;
-//    }
 };
 
 //-------------------------------------------------------------------------
@@ -205,4 +206,5 @@ static const MpseApi bf_api =
 };
 
 const BaseApi* se_bruteforce = &bf_api.base;
+
 
