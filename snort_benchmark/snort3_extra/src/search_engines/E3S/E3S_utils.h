@@ -37,12 +37,15 @@ private:
     ///trie built from dictionary entries.
     struct TrieNode {
         std::vector<int> indexesEndingHere; ///the indexes whose dictionary strings end here.
+
         std::map<uint64_t, TrieNode *> sons; ///do I have a son with some associated hash?
+        std::vector<std::pair<uint64_t, TrieNode *>> arrSons;
+
         std::vector<std::pair<int, int>> idLevsCurrentlyHere; ///keep track of tokens that are in this trie node.
 
         void clear() {
             idLevsCurrentlyHere.clear();
-            for (auto &x: sons) {
+            for (auto &x: arrSons) {
                 x.second->clear();
             }
         }
@@ -100,6 +103,8 @@ public:
     void insertQueriedString(const std::vector<uint8_t> &t, int lengthT);
 
     void massSearch(TrieNode *trieNow);
+
+    void linearizeMaps(TrieNode *trieNow);
 
     void trieBuffersFree();
 };

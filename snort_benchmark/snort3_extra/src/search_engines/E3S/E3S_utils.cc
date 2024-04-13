@@ -353,18 +353,11 @@ void ExpoSizeStrSrc::massSearch(TrieNode *trieNow) {
         massSearchResults[x] = levSum;
     }
 
-    if (trieNow->sons.empty()) {
+    if (trieNow->arrSons.empty()) {
         return;
     }
 
-    ///transform trieNow->sons in a sorted array. TODO sa faci asta in preparePatterns.
-    int i = 0, cntSons = (int)trieNow->sons.size();
-    std::pair<uint64_t, TrieNode *> sons[cntSons];
-    for (auto &x: trieNow->sons) {
-        sons[i++] = x;
-    }
-
-    int dagNode, nn, levChain, p2, startInd, dagNodeP2 = 0, dagNodeStartInd = 0;
+    int i = 0, cntSons = (int)trieNow->arrSons.size(), dagNode, nn, levChain, p2, startInd, dagNodeP2 = 0, dagNodeStartInd = 0;
     std::pair<int64_t, int64_t> hh;
     uint64_t hh_red;
 
@@ -392,7 +385,7 @@ void ExpoSizeStrSrc::massSearch(TrieNode *trieNow) {
             ///also need the minimum value of the leverages along the current chain (levChain).
             if (dagNode == -1) {
                 nn = starterNodeChildren[i];
-                levChain = leverage[nn]; ///sthe lowest leverage on a chain is always the first. in this case it's leverage[nn].
+                levChain = leverage[nn]; ///the lowest leverage on a chain is always the first. in this case it's leverage[nn].
 
                 p2 = 1 << (nn >> strE2); ///length of the string associated to nn.
                 startInd = nn - (nn >> strE2) * (1 << strE2); ///the index at which the associated string of nn begins in s.
@@ -414,12 +407,12 @@ void ExpoSizeStrSrc::massSearch(TrieNode *trieNow) {
                 hh_red = hash[nn]; ///hash was already precalculated when extending from the starter node.
             }
 
-            auto it = std::lower_bound(sons, sons + cntSons, std::make_pair(hh_red, nullptr),
+            auto it = std::lower_bound(trieNow->arrSons.begin(), trieNow->arrSons.begin() + cntSons, std::make_pair(hh_red, nullptr),
                                        [](const std::pair<uint64_t, TrieNode *> &a, std::pair<uint64_t, TrieNode *> b) {
                                            return a.first < b.first;
                                        });
 
-            if (it != sons + cntSons && it->first == hh_red) {
+            if (it != trieNow->arrSons.begin() + cntSons && it->first == hh_red) {
                 if (it->second->idLevsCurrentlyHere.empty() || it->second->idLevsCurrentlyHere.back().first != nn) {
                     it->second->idLevsCurrentlyHere.emplace_back(nn, levChain);
                 } else {
@@ -432,10 +425,24 @@ void ExpoSizeStrSrc::massSearch(TrieNode *trieNow) {
         }
     }
 
-    for (auto &x: trieNow->sons) {
+    for (auto &x: trieNow->arrSons) {
         if (!x.second->idLevsCurrentlyHere.empty()) {
             massSearch(x.second);
         }
+    }
+}
+
+void ExpoSizeStrSrc::linearizeMaps(TrieNode *trieNow) {
+    trieNow->arrSons.resize(trieNow->sons.size());
+
+    int i = 0;
+    for (auto &x: trieNow->sons) {
+        trieNow->arrSons[i++] = x;
+    }
+
+    trieNow->sons.clear();
+    for (auto &x: trieNow->arrSons) {
+        linearizeMaps(x.second);
     }
 }
 

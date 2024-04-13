@@ -92,6 +92,8 @@ public:
             }
         }
 
+        E3S->linearizeMaps(E3S->trieRoot);
+
         return 0;
     }
 
