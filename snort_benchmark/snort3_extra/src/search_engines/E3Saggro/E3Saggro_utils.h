@@ -2,6 +2,7 @@
 #ifndef SNORT3_EXTRA_E3SAGGRO_UTILS_H
 #define SNORT3_EXTRA_E3SAGGRO_UTILS_H
 
+#include <unordered_set>
 #include <algorithm>
 #include <iostream>
 #include <iomanip>
@@ -25,14 +26,38 @@ namespace xoshiro256pp {
     static inline uint64_t seed_and_get(uint64_t hh1, uint64_t hh2);
 }
 
-class ExpoSizeStrSrc {
-public:
-    static constexpr int max_ml2 = 16;
+///structura despre ce caut in DAG. caut o legatura hh1 -> hh2. nodul asociat lui hh2 are un string de lungime endExponent.
+struct LinkInfo {
+    std::pair<uint64_t, uint64_t> hashes;
+    int endExponent;
+    bool found;
 
+    LinkInfo(): hashes(0, 0), endExponent(0), found(false) {};
+    LinkInfo(uint64_t hh1, uint64_t hh2): hashes(hh1, hh2), endExponent(0), found(false) {}
+    LinkInfo(uint64_t hh1, uint64_t hh2, int ee): hashes(hh1, hh2), endExponent(ee), found(false) {}
+
+    bool operator < (const LinkInfo &oth) const { return hashes < oth.hashes; }
+    bool operator == (const LinkInfo &oth) const { return hashes == oth.hashes; }
+    bool operator != (const LinkInfo &oth) const { return hashes != oth.hashes; }
+};
+
+struct ChainInfo {
+private:
+    static constexpr int max_ml2 = 16;
+public:
+    ///hash chain info. initialized in ExpoSizeStrSrc::preprocessQueriedString. used in ExpoSizeStrSrc::queryString.
+    uint64_t fullHash;
+    int chainLength;
+    std::array<int, max_ml2> exponents;
+    std::array<uint64_t, max_ml2> t_hashes;
+    std::array<int, max_ml2 - 1> massSearchIds; ///..[i] = where to search if t_h[i] -> t_h[i+1] exists.
+};
+
+class ExpoSizeStrSrc {
 private:
     static constexpr uint32_t ct229 = (1 << 29) - 1;
     static constexpr uint64_t M61 = (1ULL << 61) - 1, M61_2x = M61 * 2;
-    static constexpr int maxn = 65'535;
+    static constexpr int maxn = 65'535, max_ml2 = 16;
     int curr_maxn = 0, curr_ml2 = 0;
 
     std::pair<int64_t, int64_t> base; ///the randomly chosen bases.
@@ -62,12 +87,11 @@ private:
 public:
     ExpoSizeStrSrc();
 
-    void updateText(const std::vector<uint8_t> &newS, int lengthNewS);
+    void updateText(const std::vector<uint8_t> &newS, int lengthNewS, std::vector<LinkInfo> &connections);
 
-    void preprocessQueriedString(const std::vector<uint8_t> &t, int lengthT,
-                                 int &chainLength, std::array<int, max_ml2> &exponents, std::array<uint64_t, max_ml2> &t_hashes);
+    void preprocessQueriedString(const std::vector<uint8_t> &t, int lengthT, ChainInfo &ci);
 
-    bool queryString(const int &chainLength, const std::array<int, max_ml2> &exponents, const std::array<uint64_t, max_ml2> &t_hashes);
+    void massSearch(std::vector<LinkInfo> &connections);
 };
 
 #endif //SNORT3_EXTRA_E3SAGGRO_UTILS_H

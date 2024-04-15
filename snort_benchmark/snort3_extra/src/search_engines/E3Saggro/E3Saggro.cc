@@ -19,11 +19,7 @@ class E3SaggroMpse : public Mpse
 {
 private:
     struct PatternInfo {
-        ///hash chain info. initialized in ExpoSizeStrSrc::preprocessQueriedString. used in ExpoSizeStrSrc::queryString.
-        int chainLength;
-        std::array<int, ExpoSizeStrSrc::max_ml2> exponents;
-        std::array<uint64_t, ExpoSizeStrSrc::max_ml2> t_hashes;
-
+        ChainInfo ci;
         void *user;
         void *tree;
         void *neg_list;
@@ -43,6 +39,8 @@ private:
 
     std::vector<PatternInfo> patterns;
     ExpoSizeStrSrc *E3Saggro;
+    std::unordered_set<uint64_t> patternHashes; ///the hashes of the patterns. don't want to work with duplicates.
+    std::vector<LinkInfo> connections; ///the patterns' hash chain connections I am interested in finding out whether they exist or not in the DAG.
 
     std::vector<uint8_t> tmp_buffer;
     uint8_t tolower_lookup[256];
@@ -78,7 +76,23 @@ public:
         std::copy(P, P + m, tmp_buffer.begin());
         for (int i = 0; i < m; i++) tmp_buffer[i] = tolower_lookup[tmp_buffer[i]];
 
-        E3Saggro->preprocessQueriedString(tmp_buffer, m, patterns.back().chainLength, patterns.back().exponents, patterns.back().t_hashes);
+        E3Saggro->preprocessQueriedString(tmp_buffer, m, patterns.back().ci);
+
+        if (patternHashes.count(patterns.back().ci.fullHash)) {
+            patterns.pop_back();
+        } else {
+            patternHashes.insert(patterns.back().ci.fullHash);
+        }
+
+        for (int i = 0; i < patterns.back().ci.chainLength - 1; i++) {
+            connections.emplace_back(patterns.back().ci.t_hashes[i], patterns.back().ci.t_hashes[i+1], patterns.back().ci.exponents[i+1]);
+        }
+
+        if (patterns.back().ci.chainLength == 1) {
+            ///we must still check for the existence of the head of the chain. add a false link.
+            ///there is no link that looks like (hh1, hh1) (it would imply that both nodes' strings have the same length).
+            connections.emplace_back(patterns.back().ci.t_hashes[0], patterns.back().ci.t_hashes[0]);
+        }
 
         return 0;
     }
@@ -89,10 +103,21 @@ public:
      * @return 0 for succes.
      */
     int prep_patterns(SnortConfig* sc) override {
+        std::sort(connections.begin(), connections.end());
+        connections.resize(std::unique(connections.begin(), connections.end()) - connections.begin());
+
         for (auto &p: patterns) {
             if (p.user) {
                 if (!p.negated) agent->build_tree(sc, p.user, &p.tree);
                 else agent->negate_list(p.user, &p.neg_list);
+            }
+
+            for (int i = 0; i < p.ci.chainLength - 1; i++) {
+                p.ci.massSearchIds[i] = std::lower_bound(connections.begin(), connections.end(), LinkInfo(p.ci.t_hashes[i], p.ci.t_hashes[i+1])) - connections.begin();
+            }
+
+            if (p.ci.chainLength == 1) {
+                p.ci.massSearchIds[0] = std::lower_bound(connections.begin(), connections.end(), LinkInfo(p.ci.t_hashes[0], p.ci.t_hashes[0])) - connections.begin();
             }
         }
 
@@ -116,17 +141,29 @@ public:
         std::copy(T, T + n, tmp_buffer.begin());
         for (int i = 0; i < n; i++) tmp_buffer[i] = tolower_lookup[tmp_buffer[i]];
 
-        E3Saggro->updateText(tmp_buffer, n);
+        E3Saggro->updateText(tmp_buffer, n, connections);
+        E3Saggro->massSearch(connections);
 
         int matches = 0;
         for (auto &p: patterns) {
-            if (E3Saggro->queryString(p.chainLength, p.exponents, p.t_hashes)) { ///TODO query si pe s[1..)?
+            bool found = true;
+            for (int i = 0; i < p.ci.chainLength - 1 && found; i++) {
+                found &= connections[p.ci.massSearchIds[i]].found;
+            }
+
+            if (p.ci.chainLength == 1) {
+                found = connections[p.ci.massSearchIds[0]].found;
+            }
+
+            if (found) {
                 matches++;
                 if (match(p.user, p.tree, 0, context, p.neg_list) > 0) {
                     return matches;
                 }
             }
         }
+
+        //printf("E3Saggro matches = %d\n", matches);
 
         return matches;
     }

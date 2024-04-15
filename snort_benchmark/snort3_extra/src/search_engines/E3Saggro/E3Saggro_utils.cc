@@ -145,8 +145,10 @@ ExpoSizeStrSrc::ExpoSizeStrSrc() {
  * @param newS. The new string, in uint8_t format: newS[0 .. lengthNewS - 1].
  *              It already comes in lowered (case-nonsensitive) format.
  * @param lengthNewS. The length of the new string.
+ * @param connections. a sorted array [(hh1, hh2)]. we eventually have to find DAG links hh1 -> hh2.
+ *                     we use it to skip over DAG links that we never have to query.
  */
-void ExpoSizeStrSrc::updateText(const std::vector<uint8_t> &newS, int lengthNewS) {
+void ExpoSizeStrSrc::updateText(const std::vector<uint8_t> &newS, int lengthNewS, std::vector<LinkInfo> &connections) {
     if (lengthNewS > curr_maxn) {
         curr_ml2 = 1 + int(log2(lengthNewS));
 
@@ -251,10 +253,18 @@ void ExpoSizeStrSrc::updateText(const std::vector<uint8_t> &newS, int lengthNewS
 
     i = 0;
     int cgIndexStart = 0, cgIndexCurr = 0; ///compressedGraph indexes.
+    int connIndex = 0; ///pointer for the (sorted) connections[] array.
 
     updBset.reset();
     while (i < cntUncompressedNodes) {
-        if (i < cntUncompressedNodes - max_ml2 + 1 && sortedHashes[i+max_ml2-1].first == sortedHashes[i].first) {
+        while (connIndex < (int)connections.size() && connections[connIndex].hashes.first < sortedHashes[i].first) {
+            connIndex++;
+        }
+
+        if (connIndex >= (int)connections.size() || connections[connIndex].hashes.first != sortedHashes[i].first) {
+            ///there is no link in connections that begins with sortedHashes[i].first. we will never query anything related, skip.
+            i++;
+        } else if (i < cntUncompressedNodes - max_ml2 + 1 && sortedHashes[i+max_ml2-1].first == sortedHashes[i].first) {
             ///we have at least log2(n) DAG nodes with the same hash value. keep track of their children. when there are
             ///enough DAG nodes with the same value, we can assume that most of their children are similar. we use a bitset
             ///to mark duplicates instead of calling std::unique later.
@@ -295,89 +305,98 @@ void ExpoSizeStrSrc::updateText(const std::vector<uint8_t> &newS, int lengthNewS
  * aggro is inherently online. since we will search the same string over different texts, we should remember in the pre-search phase the hash chain.
  * @param t the string in question: t[0 .. lengthT - 1]. t already comes in case non-sensitive format.
  * @param lengthT. The length of t.
- * @param chainLength. must be filled in this function. the length of the hash chain.
- * @param exponents. also must be filled here. the powers of two that make lengthT, in decreasing order. (i.e. for 11, [8, 2, 1])
- * @param t_hashes. also must be filled here. the elements of the hash chain.
+ * @param ci.fullHash. the entire hash of t.
+ * @param ci.chainLength. must be filled in this function. the length of the hash chain.
+ * @param ci.exponents. also must be filled here. the powers of two that make lengthT, in decreasing order. (i.e. for 11, [8, 2, 1])
+ * @param ci.t_hashes. also must be filled here. the elements of the hash chain.
  */
-void ExpoSizeStrSrc::preprocessQueriedString(const std::vector<uint8_t> &t, int lengthT,
-                                             int &chainLength, std::array<int, max_ml2> &exponents, std::array<uint64_t, max_ml2> &t_hashes) {
-    chainLength = __builtin_popcount(lengthT);
+void ExpoSizeStrSrc::preprocessQueriedString(const std::vector<uint8_t> &t, int lengthT, ChainInfo &ci) {
+    ci.chainLength = __builtin_popcount(lengthT);
 
     ///split t into a substring chain, each substring having a distinct power of 2 length.
 
     int i, j, z, k = 0;
-    std::pair<int64_t, int64_t> hh;
+    std::pair<int64_t, int64_t> hh, fullHh128(0, 0);
     for (i = max_ml2, z = 0; i >= 0; i--) {
         if (lengthT & (1<<i)) {
             hh = std::make_pair(0, 0);
             for (j = z + (1<<i); z < j; z++) {
                 mul2x(hh.first, base.first, hh.second, base.second);
+                mul2x(fullHh128.first, base.first, fullHh128.second, base.second);
+
                 hh.first += (int)t[z] + 1;
                 hh.second += (int)t[z] + 1;
 
+                fullHh128.first += (int)t[z] + 1;
+                fullHh128.second += (int)t[z] + 1;
+
                 hh.first = (hh.first >= M61? hh.first - M61: hh.first);
                 hh.second = (hh.second >= M61? hh.second - M61: hh.second);
+
+                fullHh128.first = (fullHh128.first >= M61? fullHh128.first - M61: fullHh128.first);
+                fullHh128.second = (fullHh128.second >= M61? fullHh128.second - M61: fullHh128.second);
             }
 
-            exponents[k] = i;
-            t_hashes[k++] = reduceHash(hh, logOtp[i]);
+            ci.exponents[k] = i;
+            ci.t_hashes[k++] = reduceHash(hh, logOtp[i]);
         }
     }
+
+    ci.fullHash = reduceHash(fullHh128, std::make_pair(0, 0));
 }
 
 /**
- * Does a string t appear in s?
- * @param chainLength. the length of the hash chain.
- * @param exponents. the powers of two that make lengthT, in decreasing order. (i.e. for 11, [8, 2, 1])
- * @param t_hashes. the elements of the hash chain.
+ * For each pair (hh1, hh2) in connections, does hh1 -> hh2 appear in the text's DAG? update connections[..].found with the answers.
+ * Some queried strings may have a length that is exactly a power of two. Their chains have a length of 1 (so no links).
+ * They still have entries in connections (looking like (hh1, hh1)).
+ * @param connections
  */
-bool ExpoSizeStrSrc::queryString(const int &chainLength, const std::array<int, max_ml2> &exponents, const std::array<uint64_t, max_ml2> &t_hashes) {
-    if (chainLength == 0 || std::accumulate(exponents.begin(), exponents.begin() + chainLength, 0) > n) {
-        return false;
-    }
+void ExpoSizeStrSrc::massSearch(std::vector<LinkInfo> &connections) {
+    int z, k, l, r;
+    for (auto &conn: connections) {
+        conn.found = false;
 
-    int i, j, z, k = 0;
+        if (conn.hashes.first == conn.hashes.second) {
+            ///false link. corresponding queried string's length is exactly a power of two, so the chain's length is 1.
+            ///we only check if conn.hashes is present in sortedHashes.
 
-    ///t_hashes[0] must exist in the compressed graph.
-    z = std::lower_bound(sortedHashes.begin(), sortedHashes.begin() + cntUncompressedNodes, std::make_pair(t_hashes[0], 0)) - sortedHashes.begin();
-    if (z >= cntUncompressedNodes || sortedHashes[z].first != t_hashes[0]) return false;
-
-    int l, r;
-    for (i = 0; i < chainLength - 1; i++) {
-        ///check if that compressedGraph list has t_hashes[i+1].
-        k = std::lower_bound(sortedHashes.begin(), sortedHashes.begin() + cntUncompressedNodes, std::make_pair(t_hashes[i+1], 0)) - sortedHashes.begin();
-        if (k >= cntUncompressedNodes || sortedHashes[k].first != t_hashes[i+1]) return false;
-
-        ///we know that t_hashes[i] exists. check if it has a child with the hash t_hashes[i+1].
-        std::tie(l, r) = compressedGraphId[id[sortedHashes[z].second]]; ///get the compressedGraph interval for t_hashes[i].
-
-        if (l < r) {
-            ///we already collected (and sorted) the hashes of the children of anybody with the hash t_hashes[i].
-            if (!std::binary_search(compressedGraph.begin() + l, compressedGraph.begin() + r, id[sortedHashes[k].second])) {
-                return false;
-            }
+            z = std::lower_bound(sortedHashes.begin(), sortedHashes.begin() + cntUncompressedNodes, std::make_pair(conn.hashes.first, 0)) - sortedHashes.begin();
+            conn.found = (z < cntUncompressedNodes && sortedHashes[z].first == conn.hashes.first);
         } else {
-            ///there are few DAG nodes with a hash value of t_hashes[i] (< log2(n)). we didn't put them in compressedGraph. find them here.
-            ///per DAG node, there is also only one child with the correct length (1 << exponents[i+1]).
-            int onlyId = id[sortedHashes[z].second];
-            bool found = false;
+            ///check if conn.hashes.first exists.
+            z = std::lower_bound(sortedHashes.begin(), sortedHashes.begin() + cntUncompressedNodes, std::make_pair(conn.hashes.first, 0)) - sortedHashes.begin();
+            if (z >= cntUncompressedNodes || sortedHashes[z].first != conn.hashes.first) continue;
 
-            while (z < cntUncompressedNodes && !found && id[sortedHashes[z].second] == onlyId) {
-                ///TODO len poate fi scos in afara while-ului?
-                int len = 1 << (sortedHashes[z].second >> strE2), offset = sortedHashes[z].second - (1 << strE2) * (sortedHashes[z].second >> strE2);
+            ///check if conn.hashes.second exists.
+            k = std::lower_bound(sortedHashes.begin(), sortedHashes.begin() + cntUncompressedNodes, std::make_pair(conn.hashes.second, 0)) - sortedHashes.begin();
+            if (k >= cntUncompressedNodes || sortedHashes[k].first != conn.hashes.second) continue;
 
-                found |= (offset+len + (1 << exponents[i+1]) - 1 < n && id[(1 << strE2) * exponents[i+1] + offset+len] == id[sortedHashes[k].second]);
-                z++;
+            std::tie(l, r) = compressedGraphId[id[sortedHashes[z].second]]; ///get the compressedGraph interval for conn.hashes.first.
+
+            if (l < r) {
+                ///we already collected (and sorted) the hashes of the children of anybody with the hash conn.hashes.first.
+                if (!std::binary_search(compressedGraph.begin() + l, compressedGraph.begin() + r, id[sortedHashes[k].second])) {
+                    continue;
+                }
+            } else {
+                ///there are few DAG nodes with a hash value of t_hashes[i] (< log2(n)). we didn't put them in compressedGraph. find them here.
+                ///per DAG node, there is also only one child with the correct length conn.endExponent.
+                int onlyId = id[sortedHashes[z].second], len = 1 << (sortedHashes[z].second >> strE2), offset;
+                bool found = false;
+
+                while (z < cntUncompressedNodes && !found && id[sortedHashes[z].second] == onlyId) {
+                    offset = sortedHashes[z].second - (1 << strE2) * (sortedHashes[z].second >> strE2);
+
+                    found |= (offset+len + (1 << conn.endExponent) - 1 < n && id[(1 << strE2) * conn.endExponent + offset+len] == id[sortedHashes[k].second]);
+                    z++;
+                }
+
+                if (!found) {
+                    continue;
+                }
             }
 
-            if (!found) {
-                return false;
-            }
+            conn.found = true;
         }
-
-        ///TODO ar fi ok z = k?
-        z = std::lower_bound(sortedHashes.begin(), sortedHashes.begin() + cntUncompressedNodes, std::make_pair(t_hashes[i+1], 0)) - sortedHashes.begin();
     }
-
-    return true;
 }
