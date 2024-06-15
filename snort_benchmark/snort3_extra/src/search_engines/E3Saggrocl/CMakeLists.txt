@@ -15,6 +15,7 @@ pkg_search_module ( SNORT3 REQUIRED snort>=3 )
 add_library (
     E3Saggrocl MODULE
     E3Saggrocl.cc
+    E3Saggrocl_api.cc
     E3Saggrocl_utils.cc
     E3Saggrocl_utils.h
 )

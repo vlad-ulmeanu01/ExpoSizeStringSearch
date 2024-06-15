@@ -6,8 +6,6 @@
 
 #include "log/messages.h"
 #include "framework/mpse.h"
-// #include "framework/base_api.h"
-// #include "main/snort_types.h"
 
 #include "E3Saggrocl_utils.h"
 
@@ -230,9 +228,3 @@ static const MpseApi e3saggrocl_api =
 };
 
 const BaseApi* se_E3Saggrocl = &e3saggrocl_api.base;
-
-// SO_PUBLIC const snort::BaseApi* snort_plugins[] =
-// {
-//     &e3saggrocl_api.base,
-//     nullptr
-// };
