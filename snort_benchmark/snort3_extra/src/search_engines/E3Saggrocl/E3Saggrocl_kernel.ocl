@@ -1,0 +1,95 @@
+const ulong2 ct229 = (ulong2){536870911, 536870911}, ///(1 << 29) - 1
+             M61 = (ulong2){2305843009213693951ULL, 2305843009213693951ULL},
+             M61_2x = (ulong2){4611686018427387902ULL, 4611686018427387902ULL};
+
+///xoshiro256pp_seed_and_get constants:
+const ulong2 sag_ctA = (ulong2){0x9e3779b97f4a7c15, 0x3c6ef372fe94f82a},
+             sag_ctB = (ulong2){0xbf58476d1ce4e5b9, 0xbf58476d1ce4e5b9},
+             sag_ctC = (ulong2){0x94d049bb133111eb, 0x94d049bb133111eb};
+
+void kernel copy_spad_bcast(const int n, global uchar *v, global ulong2 *pref) {
+    int i = get_global_id(0);
+    if (i >= n) return;
+    pref[i] = (ulong2){v[i], v[i]};
+}
+
+ulong2 mul2x(ulong2 a_loc, const ulong2 b) {
+    ulong2 a_hi = (ulong2){a_loc.lo >> 32, a_loc.hi >> 32}, ///<a1_hi, a2_hi>.
+           a_lo = (ulong2){(uint)a_loc.lo, (uint)a_loc.hi}, ///<a1_lo, a2_lo>.
+           b_hi = (ulong2){b.lo >> 32, b.hi >> 32}, ///<b1_hi, b2_hi>.
+           b_lo = (ulong2){(uint)b.lo, (uint)b.hi}, ///<b1_lo, b2_lo>.
+           tmp, ans;
+
+    tmp = a_hi * b_lo + a_lo * b_hi;
+    tmp = ((tmp & ct229) << 32) + (tmp >> 29);
+    tmp += (a_hi * b_hi) << 3;
+
+    ans = (tmp >> 61) + (tmp & M61);
+
+    tmp = a_lo * b_lo;
+    ans += (tmp >> 61) + (tmp & M61);
+
+    ans = (ans >= M61_2x? ans - M61_2x: (ans >= M61? ans - M61: ans));
+
+    return ans;
+}
+
+void kernel multi_shr_mul2x_add_spad(const int n, const int amt, const ulong2 b, global ulong2 *pref, global ulong2 *spad) {
+    int i = get_global_id(0);
+    if (i >= n) return;
+
+    ///hi = first, lo = second.
+
+    ///shr & mul2x: (ulong2)a <- a * b % M61.
+    ulong2 ans = mul2x((i < amt? 0: pref[i - amt]), b);
+
+    ///add_pref:
+    ans += pref[i];
+    ans = (ans >= M61? ans - M61: ans);
+    spad[i] = ans;
+}
+
+///I need H[s[0..0]], .. , H[s[n-1..n-1]], H[s[0..1]], .., H[s[n-2..n-1]], H[s[0..3]], ... (all (reduced) hashes for the lenghts 1, 2, 4, ...)
+///b: array of length O(log n). contains b**1, b**2, b**4, ...
+///otp: one-time pads for lg 1, 2, 4, ...
+///pref: [v0, Bv0 + v1, B**2v0 + Bv1 + v2, ...]
+///hh_red: solution.
+void kernel cut_reduce_hash(const int n, global ulong2 *b, global ulong2 *otp, global ulong2 *pref, global ulong *hh_red) {
+    int i = get_global_id(0), j = 0, lg = 1, lg_sum = 0;
+
+    ///compute what length do I have.
+    while (lg <= n && i >= lg_sum + n+1-lg) {
+        lg_sum += n+1-lg;
+        lg <<= 1;
+        j++;
+    }
+
+    if (lg > n) return;
+
+    i -= lg_sum;    
+    ///need to compute H[s[i .. i+lg-1]].
+
+    ulong2 hh = pref[i+lg-1], tmp;
+    if (i) {
+        tmp = mul2x(pref[i-1], b[j]);
+        hh = (hh >= tmp? hh - tmp: hh + M61 - tmp);
+    }
+
+    ///128bit hash ---(xorshift)---> uniform spread that fits in 8 bytes.
+    hh ^= otp[j];
+    
+    ///Written in 2019 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+    ///https://prng.di.unimi.it/splitmix64.c
+    ///https://prng.di.unimi.it/xoshiro256plusplus.c
+    ///https://vigna.di.unimi.it/ftp/papers/xorshift.pdf
+    ///xoshiro256pp_seed_and_get: (using splitmix64 to initialize the state of xoshiro256++. we use it for only one value after each re-seeding.)
+
+    hh += sag_ctA; ///s[0], s[3] (0x9e3779b97f4a7c15 * 2 - 2**64) from xoshiro256plusplus.
+    hh = (hh ^ (hh >> 30)) * sag_ctB;
+    hh = (hh ^ (hh >> 27)) * sag_ctC;
+    hh = hh ^ (hh >> 31);
+
+    //rotl(hh1 + hh2, 23) + hh1:
+    ulong hh_sum = hh.hi + hh.lo;
+    hh_red[i + lg_sum] = ((hh_sum << 23) | (hh_sum >> 41)) + hh.lo;
+}
