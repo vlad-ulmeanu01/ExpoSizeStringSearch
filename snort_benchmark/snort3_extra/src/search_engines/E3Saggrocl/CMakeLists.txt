@@ -11,6 +11,7 @@ endif ( APPLE )
 
 include ( FindPkgConfig )
 pkg_search_module ( SNORT3 REQUIRED snort>=3 )
+find_package(OpenCL REQUIRED)
 
 add_library (
     E3Saggrocl MODULE
@@ -38,6 +39,8 @@ target_include_directories (
     E3Saggrocl PUBLIC
     ${SNORT3_INCLUDE_DIRS}
 )
+
+target_link_libraries(E3Saggrocl OpenCL::OpenCL)
 
 install (
     TARGETS E3Saggrocl
