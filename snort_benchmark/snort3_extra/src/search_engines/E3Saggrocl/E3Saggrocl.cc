@@ -46,13 +46,13 @@ private:
     uint8_t tolower_lookup[256];
 
 public:
-    E3SaggroclMpse(const MpseAgent* agent) : Mpse("E3Saggrocl") {
+    E3SaggroclMpse(const MpseAgent* agent, SharedInfo *sharedInfo) : Mpse("E3Saggrocl") {
         this->agent = agent;
 
         std::iota(tolower_lookup, tolower_lookup + 256, 0);
         for (int i = 'A'; i <= (int)'Z'; i++) tolower_lookup[i] ^= 32;
 
-        E3Saggrocl = new ExpoSizeStrSrc;
+        E3Saggrocl = new ExpoSizeStrSrc(sharedInfo);
     }
 
     ~E3SaggroclMpse() override {
@@ -103,6 +103,8 @@ public:
      * @return 0 for succes.
      */
     int prep_patterns(SnortConfig* sc) override {
+        //std::cout << "prep_patterns: nr patternuri = " << (int)patterns.size() << '\n' << std::flush;
+
         std::sort(connections.begin(), connections.end());
         connections.resize(std::unique(connections.begin(), connections.end()) - connections.begin());
 
@@ -163,7 +165,7 @@ public:
             }
         }
 
-        //printf("E3Saggrocl matches = %d\n", matches);
+        // printf("E3Saggrocl matches = %d\n", matches);
 
         return matches;
     }
@@ -181,9 +183,12 @@ public:
 // api
 //-------------------------------------------------------------------------
 
+SharedInfo *sharedInfo = nullptr;
+
 static Mpse* e3saggrocl_ctor(const SnortConfig*, class Module*, const MpseAgent* agent)
 {
-    return new E3SaggroclMpse(agent);
+    ///apelat de ?? ori din ceva dorinta stupida a lui snort (pe acelasi thread!!).
+    return new E3SaggroclMpse(agent, sharedInfo);
 }
 
 static void e3saggrocl_dtor(Mpse* p)
@@ -193,7 +198,8 @@ static void e3saggrocl_dtor(Mpse* p)
 
 static void e3saggrocl_init()
 {
-
+    ///apelat doar o data.
+    sharedInfo = new SharedInfo;
 }
 
 static void e3saggrocl_print()

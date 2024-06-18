@@ -1,5 +1,6 @@
 #include "E3Saggrocl_utils.h"
-#include <CL/opencl.hpp>
+#include <ostream>
+#include <random>
 
 /**
  * @tparam T Sorts an array of pairs. The first element in the pairs has to be of type int/long long/__int128.
@@ -76,6 +77,91 @@ namespace xoshiro256pp {
     }
 }
 
+SharedInfo::SharedInfo() {
+    ///current time, current clock cycle count, heap address given by the OS. https://codeforces.com/blog/entry/60442
+    std::seed_seq seq {
+            (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count(),
+            (uint64_t) __builtin_ia32_rdtsc(),
+            (uint64_t) (uintptr_t) std::make_unique<char>().get()
+    };
+
+    std::mt19937_64 mt(seq);
+    std::uniform_int_distribution<uint64_t> baseDist(257, M61 - 1);
+    std::uniform_int_distribution<uint64_t> otpDist(0, ULLONG_MAX);
+    base = std::make_pair(baseDist(mt), baseDist(mt)); ///uniformly and randomly choose 2 bases to use.
+
+    while (base.second == base.first) {
+        base.second = baseDist(mt);
+    }
+
+    basePow[0] = base;
+    for (int j = 1; (1<<j) <= maxn; j++) {
+        basePow[j].first = (__int128)basePow[j-1].first * basePow[j-1].first % M61;
+        basePow[j].second = (__int128)basePow[j-1].second * basePow[j-1].second % M61;
+    }
+
+    for (int j = 0; (1<<j) <= maxn; j++) {
+        logOtp[j].first = otpDist(mt);
+        logOtp[j].second = otpDist(mt);
+    }
+
+    std::vector<cl::Platform> platforms;
+    cl::Platform::get(&platforms);
+    if (platforms.empty()) {
+        std::cout << "No platforms found.\n";
+        exit(0);
+    }
+
+    default_platform = platforms[0];
+    std::cout << "Using platform: " << default_platform.getInfo<CL_PLATFORM_NAME>() << "\n";
+
+    std::vector<cl::Device> devices;
+    default_platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+    if (devices.empty()) {
+        std::cout << "No devices found.\n";
+        exit(0);
+    }
+
+    default_device = devices[0];
+    std::cout << "Using device: " << default_device.getInfo<CL_DEVICE_NAME>() << "\n";
+
+    context = cl::Context({default_device});
+
+    std::ifstream kin("/home/vlad/Documents/SublimeMerge/snort3_extra/src/search_engines/E3Saggrocl/E3Saggrocl_kernel.ocl");
+    std::string kernel_code(std::istreambuf_iterator<char>(kin), (std::istreambuf_iterator<char>()));
+    kin.close();
+
+    std::cout << "kernel_code.size() = " << kernel_code.size() << '\n' << std::flush;
+
+    sources.emplace_back(kernel_code.c_str(), kernel_code.size());
+
+    program = cl::Program(context, sources);
+    if (program.build({ default_device }) != CL_SUCCESS) {
+        std::cout << "Error building: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(default_device) << "\n";
+        exit(0);
+    }
+
+    queue = cl::CommandQueue(context, default_device);
+
+    ///TODO: dc ai probleme sa revii la CL_MEM_READ_WRITE.
+    new_s_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(uint8_t) * maxn);
+    pref_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
+    spad_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
+    hh_red_d = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(uint64_t) * maxn * max_ml2);
+    b_powers_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
+    otp_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
+
+    // new_s_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(uint8_t) * maxn);
+    // pref_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
+    // spad_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
+    // hh_red_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(uint64_t) * maxn * max_ml2);
+    // b_powers_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
+    // otp_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
+
+    queue.enqueueWriteBuffer(b_powers_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, basePow);
+    queue.enqueueWriteBuffer(otp_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, logOtp);
+}
+
 ///a1 = a1 * b1 % M61.
 ///a2 = a2 * b2 % M61.
 void ExpoSizeStrSrc::mul2x(uint64_t &a1, const uint64_t &b1, uint64_t &a2, const uint64_t &b2) {
@@ -116,81 +202,11 @@ uint64_t ExpoSizeStrSrc::reduceHash(std::pair<uint64_t, uint64_t> &hh, std::pair
     return xoshiro256pp::seed_and_get(otp.first, otp.second);
 }
 
-ExpoSizeStrSrc::ExpoSizeStrSrc() {
-    ///current time, current clock cycle count, heap address given by the OS. https://codeforces.com/blog/entry/60442
-    std::seed_seq seq {
-            (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count(),
-            (uint64_t) __builtin_ia32_rdtsc(),
-            (uint64_t) (uintptr_t) std::make_unique<char>().get()
-    };
+ExpoSizeStrSrc::ExpoSizeStrSrc(SharedInfo *sharedInfo) {
+    this->sharedInfo = sharedInfo;
 
-    std::mt19937_64 mt(seq);
-    std::uniform_int_distribution<uint64_t> baseDist(257, M61 - 1);
-    std::uniform_int_distribution<uint64_t> otpDist(0, ULLONG_MAX);
-    base = std::make_pair(baseDist(mt), baseDist(mt)); ///uniformly and randomly choose 2 bases to use.
-
-    while (base.second == base.first) {
-        base.second = baseDist(mt);
-    }
-
-    basePow[0] = base;
-    for (int j = 1; (1<<j) <= maxn; j++) {
-        basePow[j].first = (__int128)basePow[j-1].first * basePow[j-1].first % M61;
-        basePow[j].second = (__int128)basePow[j-1].second * basePow[j-1].second % M61;
-    }
-
-    for (int j = 0; (1<<j) <= maxn; j++) {
-        logOtp[j].first = otpDist(mt);
-        logOtp[j].second = otpDist(mt);
-    }
-
-    ///setup OpenCL:
-    std::vector<cl::Platform> platforms;
-    cl::Platform::get(&platforms);
-    if (platforms.empty()) {
-        std::cerr << "No platforms found.\n";
-        exit(0);
-    }
-
-    default_platform = platforms[0];
-    std::cout << "Using platform: " << default_platform.getInfo<CL_PLATFORM_NAME>() << "\n";
-
-    std::vector<cl::Device> devices;
-    default_platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
-    if (devices.empty()) {
-        std::cerr << "No devices found.\n";
-        exit(0);
-    }
-
-    default_device = devices[0];
-    std::cout << "Using device: " << default_device.getInfo<CL_DEVICE_NAME>() << "\n";
-
-    context = cl::Context({default_device});
-    
-    std::ifstream kin("E3Saggrocl_kernel.ocl");
-    std::string kernel_code(std::istreambuf_iterator<char>(kin), (std::istreambuf_iterator<char>()));
-    kin.close();
-
-    sources.emplace_back(kernel_code.c_str(), kernel_code.size());
-
-    program = cl::Program(context, sources);
-    if (program.build({ default_device }) != CL_SUCCESS) {
-        std::cerr << "Error building: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(default_device) << "\n";
-        exit(0);
-    }
-
-    queue = cl::CommandQueue(context, default_device);
-
-    ///TODO: dc ai probleme sa revii la CL_MEM_READ_WRITE.
-    new_s_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(uint8_t) * maxn);
-    pref_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
-    spad_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
-    hh_red_d = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(uint64_t) * maxn * max_ml2);
-    b_powers_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
-    otp_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
-
-    queue.enqueueWriteBuffer(b_powers_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, basePow);
-    queue.enqueueWriteBuffer(otp_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, logOtp);
+    n = 0;
+    cntUncompressedNodes = 0;
 }
 
 /**
@@ -208,12 +224,12 @@ ExpoSizeStrSrc::updateText(
     std::vector<LinkInfo> &connections
 ) {
     ///OpenCL KernelFunctor setup:
-    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer> copy_spad_bcast(cl::Kernel(program, "copy_spad_bcast"));
-    static cl::KernelFunctor<int, int, std::pair<uint64_t, uint64_t>, cl::Buffer, cl::Buffer> multi_shr_mul2x_add_spad(cl::Kernel(program, "multi_shr_mul2x_add_spad"));
-    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer, cl::Buffer, cl::Buffer> cut_reduce_hash(cl::Kernel(program, "cut_reduce_hash"));
+    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer> copy_spad_bcast(cl::Kernel(sharedInfo->program, "copy_spad_bcast"));
+    static cl::KernelFunctor<int, int, std::pair<uint64_t, uint64_t>, cl::Buffer, cl::Buffer> multi_shr_mul2x_add_spad(cl::Kernel(sharedInfo->program, "multi_shr_mul2x_add_spad"));
+    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer, cl::Buffer, cl::Buffer> cut_reduce_hash(cl::Kernel(sharedInfo->program, "cut_reduce_hash"));
 
     cntUncompressedNodes = 0;
-    for (int lg = 1; lg <= n; lg <<= 1) cntUncompressedNodes += n+1 - lg;
+    for (int lg = 1; lg <= lengthNewS; lg <<= 1) cntUncompressedNodes += lengthNewS + 1 - lg;
 
     if (lengthNewS > curr_maxn) {
         curr_ml2 = 1 + int(log2(lengthNewS));
@@ -240,22 +256,24 @@ ExpoSizeStrSrc::updateText(
     ///compute the DAG node hashes.
     cl::NDRange global_n(n), global_nlogn(cntUncompressedNodes);
 
-    queue.enqueueWriteBuffer(new_s_d, CL_TRUE, 0, sizeof(uint8_t) * n, newS.data());
-    copy_spad_bcast(cl::EnqueueArgs(queue, global_n), n, new_s_d, pref_d).wait();
+    sharedInfo->queue.enqueueWriteBuffer(sharedInfo->new_s_d, CL_TRUE, 0, sizeof(uint8_t) * n, newS.data());
+    copy_spad_bcast(cl::EnqueueArgs(sharedInfo->queue, global_n), n, sharedInfo->new_s_d, sharedInfo->pref_d).wait();
 
     for(int pas = 1, j = 0; pas < n; pas <<= 1, j++) {
-        multi_shr_mul2x_add_spad(cl::EnqueueArgs(queue, global_n), n, pas, basePow[j], pref_d, spad_d).wait();
-        std::swap(pref_d, spad_d);
+        multi_shr_mul2x_add_spad(cl::EnqueueArgs(sharedInfo->queue, global_n), n, pas, sharedInfo->basePow[j], sharedInfo->pref_d, sharedInfo->spad_d).wait();
+        std::swap(sharedInfo->pref_d, sharedInfo->spad_d);
     }
 
-    cut_reduce_hash(cl::EnqueueArgs(queue, global_nlogn), n, b_powers_d, otp_d, pref_d, hh_red_d).wait();
-
-    queue.enqueueReadBuffer(hh_red_d, CL_TRUE, 0, sizeof(uint64_t) * cntUncompressedNodes, hh_red_h.data());
-
+    cut_reduce_hash(cl::EnqueueArgs(sharedInfo->queue, global_nlogn), n, sharedInfo->b_powers_d, sharedInfo->otp_d, sharedInfo->pref_d, sharedInfo->hh_red_d).wait();
+    
+    sharedInfo->queue.enqueueReadBuffer(sharedInfo->hh_red_d, CL_TRUE, 0, sizeof(uint64_t) * cntUncompressedNodes, hh_red_h.data());
+    
     ///fill hash[] and sortedHashes[] from hh_red_h[].
+
     cntUncompressedNodes = 0;
     for (int j = 0, treeId = 0; (1<<j) <= n; j++) {
         treeId = j * (1<<strE2);
+
         for (int i = 0; i + (1<<j) - 1 < n; i++, treeId++) {
             hash[treeId] = hh_red_h[cntUncompressedNodes];
             sortedHashes[cntUncompressedNodes++] = std::make_pair(hash[treeId], treeId);
@@ -350,8 +368,8 @@ void ExpoSizeStrSrc::preprocessQueriedString(const std::vector<uint8_t> &t, int 
         if (lengthT & (1<<i)) {
             hh = std::make_pair(0, 0);
             for (j = z + (1<<i); z < j; z++) {
-                mul2x(hh.first, base.first, hh.second, base.second);
-                mul2x(fullHh128.first, base.first, fullHh128.second, base.second);
+                mul2x(hh.first, sharedInfo->base.first, hh.second, sharedInfo->base.second);
+                mul2x(fullHh128.first, sharedInfo->base.first, fullHh128.second, sharedInfo->base.second);
 
                 hh.first += (int)t[z] + 1;
                 hh.second += (int)t[z] + 1;
@@ -367,7 +385,7 @@ void ExpoSizeStrSrc::preprocessQueriedString(const std::vector<uint8_t> &t, int 
             }
 
             ci.exponents[k] = i;
-            ci.t_hashes[k++] = reduceHash(hh, logOtp[i]);
+            ci.t_hashes[k++] = reduceHash(hh, sharedInfo->logOtp[i]);
         }
     }
 

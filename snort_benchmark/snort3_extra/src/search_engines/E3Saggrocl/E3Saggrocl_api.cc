@@ -8,4 +8,3 @@ SO_PUBLIC const snort::BaseApi* snort_plugins[] =
     se_E3Saggrocl,
     nullptr
 };
-

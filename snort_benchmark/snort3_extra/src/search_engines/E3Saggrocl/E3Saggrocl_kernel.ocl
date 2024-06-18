@@ -8,9 +8,9 @@ const ulong2 sag_ctA = (ulong2){0x9e3779b97f4a7c15, 0x3c6ef372fe94f82a},
              sag_ctC = (ulong2){0x94d049bb133111eb, 0x94d049bb133111eb};
 
 void kernel copy_spad_bcast(const int n, global uchar *v, global ulong2 *pref) {
-    int i = get_global_id(0);
+    int i = get_global_id(0), t = (int)v[i] + 1; ///!adaug aici +1.. tb sa am grija de 0-uri..
     if (i >= n) return;
-    pref[i] = (ulong2){v[i], v[i]};
+    pref[i] = (ulong2){t, t};
 }
 
 ulong2 mul2x(ulong2 a_loc, const ulong2 b) {

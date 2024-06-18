@@ -29,6 +29,27 @@ namespace xoshiro256pp {
     static inline uint64_t seed_and_get(uint64_t hh1, uint64_t hh2);
 }
 
+class SharedInfo {
+private:
+    static constexpr uint64_t M61 = (1ULL << 61) - 1;
+    static constexpr int maxn = 65'535, max_ml2 = 16;
+public:
+    std::pair<uint64_t, uint64_t> base; ///the randomly chosen bases.
+    std::pair<uint64_t, uint64_t> basePow[max_ml2]; ///the bases' powers.
+    std::pair<uint64_t, uint64_t> logOtp[max_ml2]; ///keep the one time pads for subsequences of lengths 1, 2, 4, ...
+
+    cl::Platform default_platform;
+    cl::Device default_device;
+    cl::Context context;
+    cl::Program::Sources sources;
+    cl::Program program;
+    cl::CommandQueue queue;
+
+    cl::Buffer new_s_d, pref_d, spad_d, hh_red_d, b_powers_d, otp_d;
+
+    SharedInfo();
+};
+
 ///structura despre ce caut in DAG. caut o legatura hh1 -> hh2. nodul asociat lui hh2 are un string de lungime endExponent.
 struct LinkInfo {
     std::pair<uint64_t, uint64_t> hashes;
@@ -63,10 +84,6 @@ private:
     static constexpr int maxn = 65'535, max_ml2 = 16;
     int curr_maxn = 0, curr_ml2 = 0;
 
-    std::pair<uint64_t, uint64_t> base; ///the randomly chosen bases.
-    std::pair<uint64_t, uint64_t> basePow[max_ml2]; ///the bases' powers.
-    std::pair<uint64_t, uint64_t> logOtp[max_ml2]; ///keep the one time pads for subsequences of lengths 1, 2, 4, ...
-
     int cntUncompressedNodes;
     std::vector<uint64_t> hash; ///effectively the hashes from the DAG nodes. [(1<<ml2)*ml2]
     std::vector<std::pair<uint64_t, int>> sortedHashes; ///still the hashes from the DAG nodes. first = hash, second = id. [(1<<ml2)*ml2]
@@ -77,19 +94,12 @@ private:
 
     std::bitset<(1<<max_ml2) * max_ml2> updBset; ///used in updateText to mark duplicates when iterating through DAG node children.
 
+    std::vector<uint64_t> hh_red_h; ///used only to get hh_red_d[] back.
+
     int strE2 = 0; ///2^strE2 is the smallest power of 2 that is >= n.
     int n;
 
-    ///OpenCL related:
-    cl::Platform default_platform;
-    cl::Device default_device;
-    cl::Context context;
-    cl::Program::Sources sources;
-    cl::Program program;
-    cl::CommandQueue queue;
-
-    cl::Buffer new_s_d, pref_d, spad_d, hh_red_d, b_powers_d, otp_d;
-    std::vector<uint64_t> hh_red_h; ///used only to get hh_red_d[] back.
+    SharedInfo *sharedInfo;
 
     ///the two below are exclusively used for preprocessQueriedString.
     ///a1 = a1 * b1 % M61.
@@ -101,7 +111,7 @@ private:
 
 
 public:
-    ExpoSizeStrSrc();
+    ExpoSizeStrSrc(SharedInfo *sharedInfo);
 
     void updateText(const std::vector<uint8_t> &newS, int lengthNewS, std::vector<LinkInfo> &connections);
 
