@@ -18,6 +18,10 @@ using namespace snort;
 class E3SaggroclMpse : public Mpse
 {
 private:
+    static constexpr uint32_t ct229 = (1 << 29) - 1;
+    static constexpr uint64_t M61 = (1ULL << 61) - 1, M61_2x = M61 * 2;
+    static constexpr int maxn = 65'535, max_ml2 = 16;
+
     struct PatternInfo {
         ChainInfo ci;
         void *user;
@@ -36,27 +40,132 @@ private:
     };
 
     const MpseAgent *agent;
+    SharedInfo *sharedInfo;
+    ExpoSizeStrSrc *E3Saggrocl;
 
     std::vector<PatternInfo> patterns;
-    ExpoSizeStrSrc *E3Saggrocl;
     std::unordered_set<uint64_t> patternHashes; ///the hashes of the patterns. don't want to work with duplicates.
     std::vector<LinkInfo> connections; ///the patterns' hash chain connections I am interested in finding out whether they exist or not in the DAG.
 
     std::vector<uint8_t> tmp_buffer;
     uint8_t tolower_lookup[256];
 
+    ///the two functions below are exclusively used for preprocessQueriedString.
+    ///a1 = a1 * b1 % M61.
+    ///a2 = a2 * b2 % M61.
+    static void mul2x(uint64_t &a1, const uint64_t &b1, uint64_t &a2, const uint64_t &b2) {
+        uint64_t a1_hi = a1 >> 32, a1_lo = (uint32_t)a1, b1_hi = b1 >> 32, b1_lo = (uint32_t)b1,
+                 a2_hi = a2 >> 32, a2_lo = (uint32_t)a2, b2_hi = b2 >> 32, b2_lo = (uint32_t)b2,
+                 ans_1 = 0, ans_2 = 0, tmp_1 = 0, tmp_2 = 0;
+
+        tmp_1 = a1_hi * b1_lo + a1_lo * b1_hi;
+        tmp_2 = a2_hi * b2_lo + a2_lo * b2_hi;
+
+        tmp_1 = ((tmp_1 & ct229) << 32) + (tmp_1 >> 29);
+        tmp_2 = ((tmp_2 & ct229) << 32) + (tmp_2 >> 29);
+
+        tmp_1 += (a1_hi * b1_hi) << 3;
+        tmp_2 += (a2_hi * b2_hi) << 3;
+
+        ans_1 = (tmp_1 >> 61) + (tmp_1 & M61);
+        ans_2 = (tmp_2 >> 61) + (tmp_2 & M61);
+
+        tmp_1 = a1_lo * b1_lo;
+        tmp_2 = a2_lo * b2_lo;
+
+        ans_1 += (tmp_1 >> 61) + (tmp_1 & M61);
+        ans_2 += (tmp_2 >> 61) + (tmp_2 & M61);
+
+        ans_1 = (ans_1 >= M61_2x? ans_1 - M61_2x: (ans_1 >= M61? ans_1 - M61: ans_1));
+        ans_2 = (ans_2 >= M61_2x? ans_2 - M61_2x: (ans_2 >= M61? ans_2 - M61: ans_2));
+
+        a1 = ans_1;
+        a2 = ans_2;
+    }
+
+    ///128bit hash ---(xorshift)---> uniform spread that fits in 8 bytes.
+    static uint64_t reduceHash(std::pair<uint64_t, uint64_t> &hh, std::pair<uint64_t, uint64_t> otp) {
+        otp.first ^= hh.first;
+        otp.second ^= hh.second;
+
+        ///Written in 2019 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+        ///https://prng.di.unimi.it/splitmix64.c
+        ///https://prng.di.unimi.it/xoshiro256plusplus.c
+        ///https://vigna.di.unimi.it/ftp/papers/xorshift.pdf
+
+        //xoshiro256pp::seed_and_get(otp.first, otp.second):
+        otp.first += 0x9e3779b97f4a7c15; ///s[0] from xoshiro256plusplus.
+        otp.first = (otp.first ^ (otp.first >> 30)) * 0xbf58476d1ce4e5b9;
+        otp.first = (otp.first ^ (otp.first >> 27)) * 0x94d049bb133111eb;
+        otp.first = otp.first ^ (otp.first >> 31);
+
+        otp.second += 0x3c6ef372fe94f82a; ///s[3] from xoshiro256plusplus. 0x9e3779b97f4a7c15 * 2 - 2**64.
+        otp.second = (otp.second ^ (otp.second >> 30)) * 0xbf58476d1ce4e5b9;
+        otp.second = (otp.second ^ (otp.second >> 27)) * 0x94d049bb133111eb;
+        otp.second = otp.second ^ (otp.second >> 31);
+
+        //rotl(hh1 + hh2, 23) + hh1:
+        otp.second += otp.first;
+        return ((otp.second << 23) | (otp.second >> 41)) + otp.first;
+    }
+
 public:
-    E3SaggroclMpse(const MpseAgent* agent, SharedInfo *sharedInfo) : Mpse("E3Saggrocl") {
+    E3SaggroclMpse(const MpseAgent* agent, SharedInfo *sharedInfo, ExpoSizeStrSrc *E3Saggrocl) : Mpse("E3Saggrocl") {
         this->agent = agent;
 
         std::iota(tolower_lookup, tolower_lookup + 256, 0);
         for (int i = 'A'; i <= (int)'Z'; i++) tolower_lookup[i] ^= 32;
 
-        E3Saggrocl = new ExpoSizeStrSrc(sharedInfo);
+        this->sharedInfo = sharedInfo;
+        this->E3Saggrocl = E3Saggrocl;
     }
 
     ~E3SaggroclMpse() override {
-        delete E3Saggrocl;
+
+    }
+
+    /**
+    * aggrocl is inherently online. since we will search the same string over different texts, we should remember in the pre-search phase the hash chain.
+    * @param t the string in question: t[0 .. lengthT - 1]. t already comes in case non-sensitive format.
+    * @param lengthT. The length of t.
+    * @param ci.fullHash. the entire hash of t.
+    * @param ci.chainLength. must be filled in this function. the length of the hash chain.
+    * @param ci.exponents. also must be filled here. the powers of two that make lengthT, in decreasing order. (i.e. for 11, [8, 2, 1])
+    * @param ci.t_hashes. also must be filled here. the elements of the hash chain.
+    */
+    void preprocessQueriedString(const std::vector<uint8_t> &t, int lengthT, ChainInfo &ci) {
+        ci.chainLength = __builtin_popcount(lengthT);
+
+        ///split t into a substring chain, each substring having a distinct power of 2 length.
+
+        int i, j, z, k = 0;
+        std::pair<uint64_t, uint64_t> hh, fullHh128(0, 0);
+        for (i = max_ml2, z = 0; i >= 0; i--) {
+            if (lengthT & (1<<i)) {
+                hh = std::make_pair(0, 0);
+                for (j = z + (1<<i); z < j; z++) {
+                    mul2x(hh.first, sharedInfo->base.first, hh.second, sharedInfo->base.second);
+                    mul2x(fullHh128.first, sharedInfo->base.first, fullHh128.second, sharedInfo->base.second);
+
+                    hh.first += (int)t[z] + 1;
+                    hh.second += (int)t[z] + 1;
+
+                    fullHh128.first += (int)t[z] + 1;
+                    fullHh128.second += (int)t[z] + 1;
+
+                    hh.first = (hh.first >= M61? hh.first - M61: hh.first);
+                    hh.second = (hh.second >= M61? hh.second - M61: hh.second);
+
+                    fullHh128.first = (fullHh128.first >= M61? fullHh128.first - M61: fullHh128.first);
+                    fullHh128.second = (fullHh128.second >= M61? fullHh128.second - M61: fullHh128.second);
+                }
+
+                ci.exponents[k] = i;
+                ci.t_hashes[k++] = reduceHash(hh, sharedInfo->logOtp[i]);
+            }
+        }
+
+        ci.fullHash = reduceHash(fullHh128, std::make_pair(0, 0));
     }
 
     /**
@@ -76,7 +185,7 @@ public:
         std::copy(P, P + m, tmp_buffer.begin());
         for (int i = 0; i < m; i++) tmp_buffer[i] = tolower_lookup[tmp_buffer[i]];
 
-        E3Saggrocl->preprocessQueriedString(tmp_buffer, m, patterns.back().ci);
+        preprocessQueriedString(tmp_buffer, m, patterns.back().ci);
 
         if (patternHashes.count(patterns.back().ci.fullHash)) {
             patterns.pop_back();
@@ -165,7 +274,7 @@ public:
             }
         }
 
-        // printf("E3Saggrocl matches = %d\n", matches);
+        // std::cout << "E3Saggrocl matches = " << matches << '\n' << std::flush;
 
         return matches;
     }
@@ -183,23 +292,34 @@ public:
 // api
 //-------------------------------------------------------------------------
 
+ExpoSizeStrSrc *E3Saggrocl = nullptr;
 SharedInfo *sharedInfo = nullptr;
+int refcnt_mpse = 0;
 
 static Mpse* e3saggrocl_ctor(const SnortConfig*, class Module*, const MpseAgent* agent)
 {
-    ///apelat de ?? ori din ceva dorinta stupida a lui snort (pe acelasi thread!!).
-    return new E3SaggroclMpse(agent, sharedInfo);
+    ///snort wishes to split the dictionary into multiple parts. it does so by creating multiple Mpse classes.
+    refcnt_mpse++;
+
+    return new E3SaggroclMpse(agent, sharedInfo, E3Saggrocl);
 }
 
 static void e3saggrocl_dtor(Mpse* p)
 {
     delete p;
+    
+    refcnt_mpse--;
+    if (refcnt_mpse == 0) {
+        delete E3Saggrocl;
+        delete sharedInfo;
+    }
 }
 
 static void e3saggrocl_init()
 {
-    ///apelat doar o data.
+    ///called only once.
     sharedInfo = new SharedInfo;
+    E3Saggrocl = new ExpoSizeStrSrc(sharedInfo);
 }
 
 static void e3saggrocl_print()

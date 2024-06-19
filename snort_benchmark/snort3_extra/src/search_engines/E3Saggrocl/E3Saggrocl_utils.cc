@@ -1,4 +1,5 @@
 #include "E3Saggrocl_utils.h"
+#include <iomanip>
 #include <ostream>
 #include <random>
 
@@ -51,33 +52,9 @@ void radixSortPairs(typename std::vector<T>::iterator v, int l, int r) {
     }
 }
 
-namespace xoshiro256pp {
-    ///Written in 2019 by David Blackman and Sebastiano Vigna (vigna@acm.org)
-    ///https://prng.di.unimi.it/splitmix64.c
-    ///https://prng.di.unimi.it/xoshiro256plusplus.c
-    ///https://vigna.di.unimi.it/ftp/papers/xorshift.pdf
-
-    static inline uint64_t rotl(const uint64_t x, int k) {
-        return (x << k) | (x >> (64 - k));
-    }
-
-    ///using splitmix64 to initialize the state of xoshiro256++. we use it for only one value after each re-seeding.
-    static inline uint64_t seed_and_get(uint64_t hh1, uint64_t hh2) {
-        hh1 += 0x9e3779b97f4a7c15; ///s[0] from xoshiro256plusplus.
-        hh1 = (hh1 ^ (hh1 >> 30)) * 0xbf58476d1ce4e5b9;
-        hh1 = (hh1 ^ (hh1 >> 27)) * 0x94d049bb133111eb;
-        hh1 = hh1 ^ (hh1 >> 31);
-
-        hh2 += 0x3c6ef372fe94f82a; ///s[3] from xoshiro256plusplus. 0x9e3779b97f4a7c15 * 2 - 2**64.
-        hh2 = (hh2 ^ (hh2 >> 30)) * 0xbf58476d1ce4e5b9;
-        hh2 = (hh2 ^ (hh2 >> 27)) * 0x94d049bb133111eb;
-        hh2 = hh2 ^ (hh2 >> 31);
-
-        return rotl(hh1 + hh2, 23) + hh1;
-    }
-}
-
 SharedInfo::SharedInfo() {
+    profiler_start = std::chrono::steady_clock::now();
+
     ///current time, current clock cycle count, heap address given by the OS. https://codeforces.com/blog/entry/60442
     std::seed_seq seq {
             (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count(),
@@ -104,7 +81,26 @@ SharedInfo::SharedInfo() {
         logOtp[j].first = otpDist(mt);
         logOtp[j].second = otpDist(mt);
     }
+}
 
+void SharedInfo::debug_profiler() {
+    std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    double total_time = std::chrono::duration_cast<std::chrono::microseconds>(now - profiler_start).count() * 1e-6;
+
+    std::cout << std::fixed << std::setprecision(3) << "PROFILER. updateText %: " << profiler_timeSpent_updateText / total_time <<
+                 ", updateText(part1) %: " << profiler_timeSpent_updateText_part1 / total_time <<
+                 ", massSearch %: " << profiler_timeSpent_massSearch / total_time << ", total_time(s) = " << total_time <<
+                 ", avg sort size = " << (profiler_sort_times_called > 0? (double)profiler_sort_total_size / profiler_sort_times_called: 0.0) <<
+                 ", max sort size = " << profiler_sort_max_size << '\n' << std::flush;
+}
+
+ExpoSizeStrSrc::ExpoSizeStrSrc(SharedInfo *sharedInfo) {
+    cntUncompressedNodes = 0;
+    n = 0;
+
+    this->sharedInfo = sharedInfo;
+
+    ///OpenCL setup:
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
     if (platforms.empty()) {
@@ -143,7 +139,6 @@ SharedInfo::SharedInfo() {
 
     queue = cl::CommandQueue(context, default_device);
 
-    ///TODO: dc ai probleme sa revii la CL_MEM_READ_WRITE.
     new_s_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(uint8_t) * maxn);
     pref_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
     spad_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
@@ -151,62 +146,8 @@ SharedInfo::SharedInfo() {
     b_powers_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
     otp_d = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
 
-    // new_s_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(uint8_t) * maxn);
-    // pref_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
-    // spad_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * maxn);
-    // hh_red_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(uint64_t) * maxn * max_ml2);
-    // b_powers_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
-    // otp_d = cl::Buffer(context, CL_MEM_READ_WRITE, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2);
-
-    queue.enqueueWriteBuffer(b_powers_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, basePow);
-    queue.enqueueWriteBuffer(otp_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, logOtp);
-}
-
-///a1 = a1 * b1 % M61.
-///a2 = a2 * b2 % M61.
-void ExpoSizeStrSrc::mul2x(uint64_t &a1, const uint64_t &b1, uint64_t &a2, const uint64_t &b2) {
-    uint64_t a1_hi = a1 >> 32, a1_lo = (uint32_t)a1, b1_hi = b1 >> 32, b1_lo = (uint32_t)b1,
-            a2_hi = a2 >> 32, a2_lo = (uint32_t)a2, b2_hi = b2 >> 32, b2_lo = (uint32_t)b2,
-            ans_1 = 0, ans_2 = 0, tmp_1 = 0, tmp_2 = 0;
-
-    tmp_1 = a1_hi * b1_lo + a1_lo * b1_hi;
-    tmp_2 = a2_hi * b2_lo + a2_lo * b2_hi;
-
-    tmp_1 = ((tmp_1 & ct229) << 32) + (tmp_1 >> 29);
-    tmp_2 = ((tmp_2 & ct229) << 32) + (tmp_2 >> 29);
-
-    tmp_1 += (a1_hi * b1_hi) << 3;
-    tmp_2 += (a2_hi * b2_hi) << 3;
-
-    ans_1 = (tmp_1 >> 61) + (tmp_1 & M61);
-    ans_2 = (tmp_2 >> 61) + (tmp_2 & M61);
-
-    tmp_1 = a1_lo * b1_lo;
-    tmp_2 = a2_lo * b2_lo;
-
-    ans_1 += (tmp_1 >> 61) + (tmp_1 & M61);
-    ans_2 += (tmp_2 >> 61) + (tmp_2 & M61);
-
-    ans_1 = (ans_1 >= M61_2x? ans_1 - M61_2x: (ans_1 >= M61? ans_1 - M61: ans_1));
-    ans_2 = (ans_2 >= M61_2x? ans_2 - M61_2x: (ans_2 >= M61? ans_2 - M61: ans_2));
-
-    a1 = ans_1;
-    a2 = ans_2;
-}
-
-///128bit hash ---(xorshift)---> uniform spread that fits in 8 bytes.
-uint64_t ExpoSizeStrSrc::reduceHash(std::pair<uint64_t, uint64_t> &hh, std::pair<uint64_t, uint64_t> otp) {
-    otp.first ^= hh.first;
-    otp.second ^= hh.second;
-
-    return xoshiro256pp::seed_and_get(otp.first, otp.second);
-}
-
-ExpoSizeStrSrc::ExpoSizeStrSrc(SharedInfo *sharedInfo) {
-    this->sharedInfo = sharedInfo;
-
-    n = 0;
-    cntUncompressedNodes = 0;
+    queue.enqueueWriteBuffer(b_powers_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, sharedInfo->basePow);
+    queue.enqueueWriteBuffer(otp_d, CL_TRUE, 0, sizeof(std::pair<uint64_t, uint64_t>) * max_ml2, sharedInfo->logOtp);
 }
 
 /**
@@ -214,8 +155,8 @@ ExpoSizeStrSrc::ExpoSizeStrSrc(SharedInfo *sharedInfo) {
  * @param newS. The new string, in uint8_t format: newS[0 .. lengthNewS - 1].
  *              It already comes in lowered (case-nonsensitive) format.
  * @param lengthNewS. The length of the new string.
- * @param connections. a sorted array [(hh1, hh2)]. we eventually have to find DAG links hh1 -> hh2.
- *                     we use it to skip over DAG links that we never have to query.
+ * @param connections. a sorted array [(hh1, hh2)] (i.e. the fixed dictionary. by snort's design, it is different between Mpse class instances).
+                       we eventually have to find DAG links hh1 -> hh2. we use it to skip over DAG links that we never have to query.
  */
 void
 ExpoSizeStrSrc::updateText(
@@ -223,14 +164,17 @@ ExpoSizeStrSrc::updateText(
     int lengthNewS,
     std::vector<LinkInfo> &connections
 ) {
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+
     ///OpenCL KernelFunctor setup:
-    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer> copy_spad_bcast(cl::Kernel(sharedInfo->program, "copy_spad_bcast"));
-    static cl::KernelFunctor<int, int, std::pair<uint64_t, uint64_t>, cl::Buffer, cl::Buffer> multi_shr_mul2x_add_spad(cl::Kernel(sharedInfo->program, "multi_shr_mul2x_add_spad"));
-    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer, cl::Buffer, cl::Buffer> cut_reduce_hash(cl::Kernel(sharedInfo->program, "cut_reduce_hash"));
+    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer> copy_spad_bcast(cl::Kernel(program, "copy_spad_bcast"));
+    static cl::KernelFunctor<int, int, std::pair<uint64_t, uint64_t>, cl::Buffer, cl::Buffer> multi_shr_mul2x_add_spad(cl::Kernel(program, "multi_shr_mul2x_add_spad"));
+    static cl::KernelFunctor<int, cl::Buffer, cl::Buffer, cl::Buffer, cl::Buffer> cut_reduce_hash(cl::Kernel(program, "cut_reduce_hash"));
 
     cntUncompressedNodes = 0;
     for (int lg = 1; lg <= lengthNewS; lg <<= 1) cntUncompressedNodes += lengthNewS + 1 - lg;
 
+    ///TODO: scoatem astea.
     if (lengthNewS > curr_maxn) {
         curr_ml2 = 1 + int(log2(lengthNewS));
 
@@ -256,17 +200,17 @@ ExpoSizeStrSrc::updateText(
     ///compute the DAG node hashes.
     cl::NDRange global_n(n), global_nlogn(cntUncompressedNodes);
 
-    sharedInfo->queue.enqueueWriteBuffer(sharedInfo->new_s_d, CL_TRUE, 0, sizeof(uint8_t) * n, newS.data());
-    copy_spad_bcast(cl::EnqueueArgs(sharedInfo->queue, global_n), n, sharedInfo->new_s_d, sharedInfo->pref_d).wait();
+    queue.enqueueWriteBuffer(new_s_d, CL_TRUE, 0, sizeof(uint8_t) * n, newS.data());
+    copy_spad_bcast(cl::EnqueueArgs(queue, global_n), n, new_s_d, pref_d).wait();
 
     for(int pas = 1, j = 0; pas < n; pas <<= 1, j++) {
-        multi_shr_mul2x_add_spad(cl::EnqueueArgs(sharedInfo->queue, global_n), n, pas, sharedInfo->basePow[j], sharedInfo->pref_d, sharedInfo->spad_d).wait();
-        std::swap(sharedInfo->pref_d, sharedInfo->spad_d);
+        multi_shr_mul2x_add_spad(cl::EnqueueArgs(queue, global_n), n, pas, sharedInfo->basePow[j], pref_d, spad_d).wait();
+        std::swap(pref_d, spad_d);
     }
 
-    cut_reduce_hash(cl::EnqueueArgs(sharedInfo->queue, global_nlogn), n, sharedInfo->b_powers_d, sharedInfo->otp_d, sharedInfo->pref_d, sharedInfo->hh_red_d).wait();
+    cut_reduce_hash(cl::EnqueueArgs(queue, global_nlogn), n, b_powers_d, otp_d, pref_d, hh_red_d).wait();
     
-    sharedInfo->queue.enqueueReadBuffer(sharedInfo->hh_red_d, CL_TRUE, 0, sizeof(uint64_t) * cntUncompressedNodes, hh_red_h.data());
+    queue.enqueueReadBuffer(hh_red_d, CL_TRUE, 0, sizeof(uint64_t) * cntUncompressedNodes, hh_red_h.data());
     
     ///fill hash[] and sortedHashes[] from hh_red_h[].
 
@@ -280,8 +224,17 @@ ExpoSizeStrSrc::updateText(
         }
     }
 
-    ///sort all the DAG hashes. afterwards, we can compress the duplicates.
+    ///sort all the DAG hashes. afterwards, we can compress the duplicates. (!! radix sort ia 40% DIN TIMP.... std::sort ia 45%.... incerc unordered_set?)
     radixSortPairs<std::pair<uint64_t, int>>(sortedHashes.begin(), 0, cntUncompressedNodes - 1);
+
+    sharedInfo->profiler_sort_max_size = std::max(sharedInfo->profiler_sort_max_size, cntUncompressedNodes);
+    sharedInfo->profiler_sort_total_size += cntUncompressedNodes;
+    sharedInfo->profiler_sort_times_called++;
+
+    std::chrono::steady_clock::time_point end1 = std::chrono::steady_clock::now();
+    sharedInfo->profiler_timeSpent_updateText_part1 += std::chrono::duration_cast<std::chrono::microseconds>(end1 - start).count() * 1e-6;
+    sharedInfo->profiler_counter++;
+    if (sharedInfo->profiler_counter % sharedInfo->profiler_debug_every == 0) sharedInfo->debug_profiler();
 
     int i = 0, j, z;
     while (i < cntUncompressedNodes) {
@@ -346,50 +299,11 @@ ExpoSizeStrSrc::updateText(
             i++;
         }
     }
-}
 
-/**
- * aggrocl is inherently online. since we will search the same string over different texts, we should remember in the pre-search phase the hash chain.
- * @param t the string in question: t[0 .. lengthT - 1]. t already comes in case non-sensitive format.
- * @param lengthT. The length of t.
- * @param ci.fullHash. the entire hash of t.
- * @param ci.chainLength. must be filled in this function. the length of the hash chain.
- * @param ci.exponents. also must be filled here. the powers of two that make lengthT, in decreasing order. (i.e. for 11, [8, 2, 1])
- * @param ci.t_hashes. also must be filled here. the elements of the hash chain.
- */
-void ExpoSizeStrSrc::preprocessQueriedString(const std::vector<uint8_t> &t, int lengthT, ChainInfo &ci) {
-    ci.chainLength = __builtin_popcount(lengthT);
-
-    ///split t into a substring chain, each substring having a distinct power of 2 length.
-
-    int i, j, z, k = 0;
-    std::pair<uint64_t, uint64_t> hh, fullHh128(0, 0);
-    for (i = max_ml2, z = 0; i >= 0; i--) {
-        if (lengthT & (1<<i)) {
-            hh = std::make_pair(0, 0);
-            for (j = z + (1<<i); z < j; z++) {
-                mul2x(hh.first, sharedInfo->base.first, hh.second, sharedInfo->base.second);
-                mul2x(fullHh128.first, sharedInfo->base.first, fullHh128.second, sharedInfo->base.second);
-
-                hh.first += (int)t[z] + 1;
-                hh.second += (int)t[z] + 1;
-
-                fullHh128.first += (int)t[z] + 1;
-                fullHh128.second += (int)t[z] + 1;
-
-                hh.first = (hh.first >= M61? hh.first - M61: hh.first);
-                hh.second = (hh.second >= M61? hh.second - M61: hh.second);
-
-                fullHh128.first = (fullHh128.first >= M61? fullHh128.first - M61: fullHh128.first);
-                fullHh128.second = (fullHh128.second >= M61? fullHh128.second - M61: fullHh128.second);
-            }
-
-            ci.exponents[k] = i;
-            ci.t_hashes[k++] = reduceHash(hh, sharedInfo->logOtp[i]);
-        }
-    }
-
-    ci.fullHash = reduceHash(fullHh128, std::make_pair(0, 0));
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    sharedInfo->profiler_timeSpent_updateText += std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() * 1e-6;
+    sharedInfo->profiler_counter++;
+    if (sharedInfo->profiler_counter % sharedInfo->profiler_debug_every == 0) sharedInfo->debug_profiler();
 }
 
 /**
@@ -399,6 +313,8 @@ void ExpoSizeStrSrc::preprocessQueriedString(const std::vector<uint8_t> &t, int 
  * @param connections
  */
 void ExpoSizeStrSrc::massSearch(std::vector<LinkInfo> &connections) {
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+
     int z, k, l, r;
     for (auto &conn: connections) {
         conn.found = false;
@@ -446,4 +362,9 @@ void ExpoSizeStrSrc::massSearch(std::vector<LinkInfo> &connections) {
             conn.found = true;
         }
     }
+
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    sharedInfo->profiler_timeSpent_massSearch += std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() * 1e-6;
+    sharedInfo->profiler_counter++;
+    if (sharedInfo->profiler_counter % sharedInfo->profiler_debug_every == 0) sharedInfo->debug_profiler();
 }
