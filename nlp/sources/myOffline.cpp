@@ -531,7 +531,7 @@ int main() {
     std::vector<std::string> patterns, targets;
     parse_input(patterns, targets);
 
- 	ExpoSizeStrSrc *E3S = new ExpoSizeStrSrc();
+ 	ExpoSizeStrSrc* E3S = new ExpoSizeStrSrc();
 
  	for (auto& p: patterns) {
  		E3S->insertQueriedString(p);
@@ -544,42 +544,6 @@ int main() {
 			std::cout << x << '\n';
 		}
  	}
-
-	
- 
-	// int n; std::cin >> n;
-	// // std::cerr << n << "\n";
-	// std::string t;
-	// for (int i = 0; i < n; i++) {
-	// 	std::cin >> t;
-	// 	E3S->insertQueriedString(t);
-	// 	// int l, r; std::cin >> l >> r;
-	// 	// std::cerr << s.substr(l-1, r-l+1) << "\n";
-	// 	// E3S->insertQueriedString(s.substr(l-1, r-l+1));
-	// }
-
-	// int count_s;
-	// std::cin >> count_s;
-	// std::cerr << count_s << "\n";
-
-	// std::string s; 
-	// for (int i = 0; i < count_s; ++i) {
-	// 	std::cin >> s;
-	//     // std::getline(std::cin, s);
-	// 	E3S->setupDag(s);
-
-	// 	E3S->massSearch(E3S->trieRoot);
-	// 	// std::cout << "Search for " << s << "\n";
-	// 	for (int x: E3S->massSearchResults) {
-	// 		std::cout << x << '\n';
-	// 		// std::cerr << "What the hell?" << "\n";
-	// 	}
-	// 	for (auto k = 0; k < E3S->massSearchResults.size(); ++k) {
-	// 		E3S->massSearchResults[k] = 0;
-	// 	}		
-
-	// 	// std::cout << "Done!\n";
-	// }
  
 	delete E3S;
 	return 0;
