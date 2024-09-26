@@ -165,28 +165,6 @@ int32_t main() {
             std::cout << count_occurrence(s, sa.SA, p) << "\n";
         }
     }
-
-    // std::string s; 
-    // for (int i = 0; i < count_s; ++i) {
-    //     std::getline(std::cin, pat);
-    //     // std::cerr << i << " " << pat.c_str()[0] << "\n";
-
-    //     SuffixArray sa(s);
-    //     for (std::string& pat : patterns)
-    //         cout << count_occurrence(s, sa.SA, pat) << '\n';
-    //     // std::cerr << i << "\n";
-    // }
-
-    // string s; //cin >> s;
-    // std::getline(std::cin, s);
-    // SuffixArray sa(s);
-    // int q; cin >> q;
-    // while (q--) {
-    //     string pat;
-    //     cin >> pat;
-    //     // int l, r; cin >> l >> r;
-    //     // pat = s.substr(l-1, r-l+1);
-    //     cout << count_occurrence(s, sa.SA, pat) << '\n';
-    // }
+    
     return 0;
 }

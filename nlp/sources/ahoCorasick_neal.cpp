@@ -275,28 +275,5 @@ int main() {
         }
     }
 
-//     ios::sync_with_stdio(false);
-// #ifndef NEAL_DEBUG
-//     cin.tie(nullptr);
-// #endif
- 
-//     string S;
-//     std::getline(std::cin, S);
-
-//     int K;
-//     cin >> K;
-
-//     vector<string> patterns(K);
- 
-//     for (auto &pattern : patterns) {
-//         cin >> pattern;
-//         // int l, r; cin >> l >> r;
-//         // pattern = S.substr(l-1, r-l+1);
-//     }
- 
-//     aho_corasick AC(patterns);
-//     vector<int> matches = AC.count_matches(S);
- 
-//     for (auto &match : matches)
-//         cout << match << '\n';
+    return 0;
 }

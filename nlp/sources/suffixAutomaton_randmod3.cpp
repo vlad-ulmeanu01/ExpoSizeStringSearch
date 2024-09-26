@@ -58,9 +58,8 @@ void reset() {
     std::fill(Link, Link + SA, 0);
     std::fill(cnt, cnt + SA, 0);
 
-    // Reset to array to -1 (or 0 if needed)
     for (int i = 0; i < SA; ++i) {
-        to[i].fill(0); // Or .fill(0) if you need to reset to 0
+        to[i].fill(0);
     }
 }
 
@@ -95,68 +94,32 @@ int main() {
     std::vector<std::string> patterns, targets;
     parse_input(patterns, targets);
  
-	// string s; //cin >> s;
-    // std::getline(std::cin, s);
-
     for (auto& t: targets) {
-    	reset();
+        reset();
 
-		for (char c : t)
-			add(c - 'a');
+        for (char c : t)
+            add(c - 'a');
 
-		vector<int> nodes(lastID);
+        vector<int> nodes(lastID);
 
-		iota(nodes.begin(), nodes.end(), 1);
-		sort(nodes.begin(), nodes.end(), [&](int u, int v) { return len[u] > len[v]; });
+        iota(nodes.begin(), nodes.end(), 1);
+        sort(nodes.begin(), nodes.end(), [&](int u, int v) { return len[u] > len[v]; });
 
-		for (int u : nodes)
-			cnt[Link[u]] += cnt[u];
- 	
-		cnt[0] = 0;
- 		
- 		int i = 0; 
- 		for (auto& p: patterns) {
- 			int u = 1;
- 			// std::cerr << i++ << "\n";
+        for (int u : nodes)
+        	cnt[Link[u]] += cnt[u];
 
-			for (char _c : p) {
-				int c = _c - 'a';
-				u = to[u][c];
-			}
-
-			cout << cnt[u] << '\n';
- 		}
-
+        cnt[0] = 0;
+        	
+        int i = 0; 
+        for (auto& p: patterns) {
+            int u = 1;
+            for (char _c : p) {
+                int c = _c - 'a';
+                u = to[u][c];
+            }
+            cout << cnt[u] << '\n';
+        }
     }
-
-	// for (char c : s)
-	// 	add(c - 'a');
- 
-	// vector<int> nodes(lastID);
-
-	// iota(nodes.begin(), nodes.end(), 1);
-	// sort(nodes.begin(), nodes.end(),
-	// 		[&](int u, int v) { return len[u] > len[v]; });
-
-	// for (int u : nodes)
-	// 	cnt[Link[u]] += cnt[u];
- 
-	// cnt[0] = 0;
- 
-	// int q; cin >> q;
-	// while (q--) {
-	// 	string t;
-	// 	cin >> t;
-	// 	// int l, r; cin >> l >> r;
-	// 	// t = s.substr(l-1, r-l+1);
-
-	// 	int u = 1;
-	// 	for (char _c : t) {
-	// 		int c = _c - 'a';
-	// 		u = to[u][c];
-	// 	}
-	// 	cout << cnt[u] << '\n';
-	// }
  
 	return 0;
 }

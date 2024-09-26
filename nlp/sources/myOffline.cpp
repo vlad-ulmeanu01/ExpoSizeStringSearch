@@ -531,21 +531,21 @@ int main() {
     std::vector<std::string> patterns, targets;
     parse_input(patterns, targets);
 
- 	ExpoSizeStrSrc* E3S = new ExpoSizeStrSrc();
+    ExpoSizeStrSrc* E3S = new ExpoSizeStrSrc();
 
- 	for (auto& p: patterns) {
- 		E3S->insertQueriedString(p);
- 	}
+    for (auto& p: patterns) {
+        E3S->insertQueriedString(p);
+    }
 
- 	for (auto& t: targets) {
- 		E3S->setupDag(t);
-		E3S->massSearch(E3S->trieRoot);
-		for (int x: E3S->massSearchResults) {
-			std::cout << x << '\n';
-		}
- 	}
+    for (auto& t: targets) {
+   	    E3S->setupDag(t);
+        E3S->massSearch(E3S->trieRoot);
+        for (int x: E3S->massSearchResults) {
+            std::cout << x << '\n';
+        }
+    }
  
-	delete E3S;
-	return 0;
+    delete E3S;
+    return 0;
 }
 

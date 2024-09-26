@@ -143,23 +143,4 @@ int32_t main() {
             std::cout << suf.NumOcc(p) << "\n";
         }
     }
-
-// int main() {
-//   cin.tie(nullptr);
-//   ios::sync_with_stdio(false);
-//   string s;
-//   // cin >> s;
-//   std::getline(std::cin, s);
-//   SufTree suf;
-//   suf.Initialize(s);
-//   suf.GetSubtreeSizes();
-//   int k;
-//   cin >> k;
-//   while (k--) {
-//     string p;
-//     cin >> p;
-//     // int l, r; cin >> l >> r;
-//     // p = s.substr(l-1, r-l+1);
-//     cout << suf.NumOcc(p) << '\n';
-//   }
 }
