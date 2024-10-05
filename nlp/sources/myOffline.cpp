@@ -344,7 +344,8 @@ public:
 			logOtp[j].second = otpDist(mt);
 		}
 
- 
+        std::sort(starterNodeChildren, starterNodeChildren + cntStarterNodeChildren); 
+
 		trieRoot->idLevsCurrentlyHere.emplace_back(-1, INT_MAX); ///-1 is the starter node.
 	}
  
@@ -504,7 +505,7 @@ void parse_input(
     std::vector<std::string>& patterns,
     std::vector<std::string>& targets) {
 
-	std::ios::sync_with_stdio(false); std::cin.tie(nullptr); std::cout.tie(nullptr);
+    std::ios::sync_with_stdio(false); std::cin.tie(nullptr); std::cout.tie(nullptr);
 
     int q; std::cin >> q;
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');

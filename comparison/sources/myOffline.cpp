@@ -313,6 +313,8 @@ public:
 			}
 		}
  
+        std::sort(starterNodeChildren, starterNodeChildren + cntStarterNodeChildren); ///!!copiii lui starter nu sunt sortati..
+
 		trieRoot->idLevsCurrentlyHere.emplace_back(-1, INT_MAX); ///-1 is the starter node.
 	}
  

@@ -21,9 +21,14 @@ def retrieve_bookcorpus(book_corpus= 1, num_queries= 100000):
     dictionary = []
     with open(f"./bookcorpus/books_large_p{book_corpus}.txt", "r") as file:        
         for line in tqdm(file):
-            dictionary.append(preprocess_string(line))
+            line = preprocess_string(line)
+
+            if len(line):
+                dictionary.append(line)
+
             if len(dictionary) > num_queries:
                 break
+
     return dictionary
 
 
