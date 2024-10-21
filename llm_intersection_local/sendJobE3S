@@ -1,0 +1,8 @@
+#!/bin/sh
+
+sbatch -p dgxh100 -t 12:00:00 --mem-per-cpu 32G --output=output.log --wrap="./E3S/main" &&
+watch -n 1 squeue -u vlad_adrian.ulmeanu
+
+# cat timp a luat rularea jobului:
+# sacct -j <myid> --format=Elapsed
+
