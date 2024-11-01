@@ -30,16 +30,16 @@ void read_single_column() {
     ///iterates through all strings and prints those that contain a 0 midway through.
     for (int i = 0; i < sa->length(); i++) {
         //std::string buf = sa->GetString(i);
-	    //std::vector<uint8_t> v(buf.data(), buf.data() + buf.size());
+        //std::vector<uint8_t> v(buf.data(), buf.data() + buf.size());
             
-	    //std::vector<uint8_t> v(sa->value_data()->data() + sa->value_offset(i), sa->value_data()->data() + (i+1 < sa->length()? sa->value_offset(i+1): sa->value_data()->size()));
+        //std::vector<uint8_t> v(sa->value_data()->data() + sa->value_offset(i), sa->value_data()->data() + (i+1 < sa->length()? sa->value_offset(i+1): sa->value_data()->size()));
         std::vector<uint8_t> v(sa->value_data()->data() + sa->value_offset(i), sa->value_data()->data() + sa->value_offset(i+1));
 
-	    if (*std::min_element(v.begin(), v.end())) continue;
+        if (*std::min_element(v.begin(), v.end())) continue;
 
         std::cout << "i, size = " << i << ' ' <<  v.size() << ": ";
-	    for (uint8_t x: v) std::cout << x << ' ';
-	    std::cout << '\n';
+        for (uint8_t x: v) std::cout << x << ' ';
+        std::cout << '\n';
     }
 
     //PARQUET_THROW_NOT_OK(arrow::PrettyPrint(*array, 4, &std::cout));
