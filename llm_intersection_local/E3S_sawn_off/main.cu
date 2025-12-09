@@ -41,12 +41,17 @@ int main() {
         ///citesc/tin in memorie doar ca sa calculez hash-urile pentru prefix/sufix.
         int sseg_start_i = 0, sseg_m = 0;
 
-        std::vector<uint8_t> sseg_ts_buff(MAXM_STREAMING);
+        std::vector<uint8_t> hst_sseg_ts_buff(MAXM_STREAMING);
         std::vector<int> hst_set_keys_at;
 
-        auto flush_streaming_segment = [&dev_base_pws, &sseg_m, &m, &sseg_start_i, &sseg_ts_buff, &hst_set_keys_at, &hst_ts_info](int sseg_end_i) {
+        auto flush_streaming_segment = [&dev_base_pws, &sseg_m, &m, &sseg_start_i, &hst_sseg_ts_buff, &hst_set_keys_at, &hst_ts_info](int sseg_end_i) {
             thrust::device_vector<thrust::pair<uint64_t, int>> dev_tmp_in(sseg_m), dev_tmp_out(sseg_m);
-            thrust::transform(sseg_ts_buff.begin(), sseg_ts_buff.begin() + sseg_m, dev_tmp_in.begin(), [] __device__ (uint8_t ch) { return thrust::make_pair((uint64_t)ch, 1); });
+
+            {
+                thrust::device_vector<uint8_t> dev_sseg_ts_buff(sseg_m);
+                thrust::copy(hst_sseg_ts_buff.begin(), hst_sseg_ts_buff.begin() + sseg_m, dev_sseg_ts_buff.begin());
+                thrust::transform(dev_sseg_ts_buff.begin(), dev_sseg_ts_buff.end(), dev_tmp_in.begin(), [] __device__ (uint8_t ch) { return thrust::make_pair((uint64_t)ch, 1); });
+            }
 
             thrust::device_vector<int> dev_set_keys_at = hst_set_keys_at, dev_keys(sseg_m);
             kernel_set_keys_at<<<(hst_set_keys_at.size() + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
@@ -102,7 +107,7 @@ int main() {
             hst_set_keys_at.push_back(sseg_m);
             if (pref_len < t.size()) hst_set_keys_at.push_back(sseg_m + pref_len);
             
-            std::copy(t.begin(), t.end(), sseg_ts_buff.begin() + sseg_m);
+            std::copy(t.begin(), t.end(), hst_sseg_ts_buff.begin() + sseg_m);
             sseg_m += t.size();
         }
 
@@ -187,7 +192,7 @@ int main() {
         ///generez toate subsecv de lungime p2 din s, shade-urile lor, tin minte locatiile shade-urilor.
         int cnt_prefs = n+1 - p2;
         kernel_compute_prefix_info<<<(cnt_prefs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
-            cnt_prefs, p2, thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0])
+            n, cnt_prefs, p2, thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0])
         );
 
         {
@@ -293,7 +298,7 @@ int main() {
         }
 
         kernel_solve_halfway_group<<<(cnt_groups + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
-            p2, thrust::raw_pointer_cast(&dev_s_cuts[0]), q,
+            q, p2, thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0]),
             cnt_groups, thrust::raw_pointer_cast(&dev_group_starts[0]),
             cnt_prefs, thrust::raw_pointer_cast(&dev_prefs[0]),
             ts_msb_l, ts_msb_r, thrust::raw_pointer_cast(&dev_ts_info[0]),

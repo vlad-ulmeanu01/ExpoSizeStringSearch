@@ -102,7 +102,7 @@ struct PrefSumModMultiples {
     }
 };
 
-__global__ void kernel_compute_prefix_info(int cnt_prefs, int pw_msb, PrefixInfo *dev_prefs, uint64_t *dev_base_pws, uint64_t *dev_s_cuts);
+__global__ void kernel_compute_prefix_info(int n, int cnt_prefs, int pw_msb, PrefixInfo *dev_prefs, uint64_t *dev_base_pws, uint64_t *dev_s_cuts);
 
 __global__ void kernel_set_keys_at(int cnt_set_keys_at, int *dev_set_keys_at, int *dev_keys);
 
@@ -119,14 +119,14 @@ __global__ void kernel_mark_group_starts(int cnt_prefs, PrefixInfo *dev_prefs, i
 __global__ void kernel_get_group_starts(int cnt_prefs, int *dev_group_start_markers, int *dev_group_starts);
 
 __global__ void kernel_solve_group_child(
-    int p2, uint64_t *dev_s_cuts, int q,
+    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
     PrefixInfo *dev_prefs, int pref_l, int pref_r,
     int ts_l, int ts_r, TsInfo *dev_ts_info,
     int cnt_suff_lens, int *dev_suff_lens
 );
 
 __global__ void kernel_solve_halfway_group(
-    int p2, uint64_t *dev_s_cuts, int q,
+    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
     int cnt_groups, int *dev_group_starts,
     int cnt_prefs, PrefixInfo *dev_prefs,
     int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info,

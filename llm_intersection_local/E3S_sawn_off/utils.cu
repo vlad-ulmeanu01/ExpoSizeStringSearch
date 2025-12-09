@@ -18,7 +18,7 @@ __host__ __device__ uint64_t mul(uint64_t a, uint64_t b) {
  
 
 __global__ void kernel_compute_prefix_info(
-    int cnt_prefs, int pw_msb, PrefixInfo *dev_prefs, uint64_t *dev_base_pws, uint64_t *dev_s_cuts
+    int n, int cnt_prefs, int pw_msb, PrefixInfo *dev_prefs, uint64_t *dev_base_pws, uint64_t *dev_s_cuts
 ) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= cnt_prefs) return;
@@ -27,12 +27,12 @@ __global__ void kernel_compute_prefix_info(
     int sh_end = index+pw_msb + pw_msb-2;
     dev_prefs[index].sh_end = (sh_end < n? sh_end: n-1);
 
-    uint64_t hh_p = dev_s_cuts[index+pw_msb] - mul(dev_s_cuts[index], dev_base_pws[pw_msb]);
-    dev_prefs[index].hh_p = (hh_p < 0? hh_p + M61: hh_p);
+    uint64_t hh_p = dev_s_cuts[index+pw_msb], hh_p_sub = mul(dev_s_cuts[index], dev_base_pws[pw_msb]);
+    dev_prefs[index].hh_p = (hh_p < hh_p_sub? M61 + hh_p - hh_p_sub: hh_p - hh_p_sub);
 
     if (dev_prefs[index].sh_start <= dev_prefs[index].sh_end) {
-        uint64_t hh_s = dev_s_cuts[dev_prefs[index].sh_end + 1] - mul(dev_s_cuts[dev_prefs[index].sh_start], dev_base_pws[pw_msb-1]);
-        dev_prefs[index].hh_s = (hh_s < 0? hh_s + M61: hh_s);
+        uint64_t hh_s = dev_s_cuts[dev_prefs[index].sh_end + 1], hh_s_sub = mul(dev_s_cuts[dev_prefs[index].sh_start], dev_base_pws[dev_prefs[index].sh_end - dev_prefs[index].sh_start + 1]);
+        dev_prefs[index].hh_s = (hh_s < hh_s_sub? M61 + hh_s - hh_s_sub: hh_s - hh_s_sub);
     } else dev_prefs[index].hh_s = 0;
 
     ///.lev e calculat ulterior.
@@ -102,7 +102,7 @@ __global__ void kernel_get_group_starts(
 }
 
 __global__ void kernel_solve_group_child(
-    int p2, uint64_t *dev_s_cuts, int q,
+    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
     PrefixInfo *dev_prefs, int pref_l, int pref_r,
     int ts_l, int ts_r, TsInfo *dev_ts_info,
     int cnt_suff_lens, int *dev_suff_lens
@@ -117,8 +117,8 @@ __global__ void kernel_solve_group_child(
         ///sh_start, sh_end.
         int l = dev_prefs[pref_ind].sh_start, r = l + dev_suff_lens[i] - 1;
         if (r <= dev_prefs[pref_ind].sh_end) {
-            uint64_t hh_suff = dev_s_cuts[r + 1] - mul(dev_s_cuts[l], dev_base_pws[p2-1]);
-            hh_suff = (hh_suff < 0? hh_suff + M61: hh_suff);
+            uint64_t hh_suff = dev_s_cuts[r+1], hh_suff_sub = mul(dev_s_cuts[l], dev_base_pws[r-l+1]);
+            hh_suff = (hh_suff < hh_suff_sub? M61 + hh_suff - hh_suff_sub: hh_suff - hh_suff_sub);
 
             int j = ts_r;
             for (int pas = (1<<30); pas; pas >>= 1) {
@@ -126,15 +126,15 @@ __global__ void kernel_solve_group_child(
             }
 
             if (dev_ts_info[j].hh_s == hh_suff) {
-                atomicAdd(dev_ts_info[j].count, lev);
+                atomicAdd(&dev_ts_info[j].count, lev);
                 if (j == ts_r || dev_ts_info[j+1].hh_s > hh_suff) { ///am exact un singur match.
-                    if (j+1 < q) atomicAdd(dev_ts_info[j+1].count, -lev);
+                    if (j+1 < q) atomicAdd(&dev_ts_info[j+1].count, -lev);
                 } else { ///trebuie sa cautam binar ultimul match.
                     int z = j;
                     for (int pas = (1<<30); pas; pas >>= 1) {
                         if (z + pas <= ts_r && dev_ts_info[z+pas].hh_s == hh_suff) z += pas;
                     }
-                    if (z+1 < q) atomicAdd(dev_ts_info_out[z+1].count, -lev);
+                    if (z+1 < q) atomicAdd(&dev_ts_info[z+1].count, -lev);
                 }
             }
         }
@@ -142,7 +142,7 @@ __global__ void kernel_solve_group_child(
 }
 
 __global__ void kernel_solve_halfway_group(
-    int p2, uint64_t *dev_s_cuts, int q,
+    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
     int cnt_groups, int *dev_group_starts,
     int cnt_prefs, PrefixInfo *dev_prefs,
     int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info,
@@ -165,13 +165,13 @@ __global__ void kernel_solve_halfway_group(
         if (ts_l - pas >= ts_msb_l && dev_ts_info[ts_l - pas].hh_p >= hh_p) ts_l -= pas;
     }
 
-    if (dev_ts_info[ts_l] != hh_p) return; ///nu exista hh_p in ts_info.
+    if (dev_ts_info[ts_l].hh_p != hh_p) return; ///nu exista hh_p in ts_info.
     int ts_r = ts_l;
     for (int pas = (1<<30); pas; pas >>= 1) {
         if (ts_r + pas <= ts_msb_r && dev_ts_info[ts_r + pas].hh_p == hh_p) ts_r += pas;
     }
 
     kernel_solve_group_child<<<(pref_r-pref_l + THREADS_PER_BLOCK) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
-        p2, dev_s_cuts, q, dev_prefs, pref_l, pref_r, ts_l, ts_r, dev_ts_info, cnt_suff_lens, dev_suff_lens
+        q, p2, dev_base_pws, dev_s_cuts, dev_prefs, pref_l, pref_r, ts_l, ts_r, dev_ts_info, cnt_suff_lens, dev_suff_lens
     );
 }
