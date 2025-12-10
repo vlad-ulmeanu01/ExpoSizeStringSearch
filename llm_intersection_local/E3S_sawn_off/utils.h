@@ -1,4 +1,5 @@
 #pragma once
+#include <cuda_runtime.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #include <thrust/transform.h>
@@ -79,6 +80,8 @@ struct TsInfo {
     int count; ///raspunsul.
 };
 
+__host__ __device__ int get_msb(int x);
+
 __host__ __device__ uint64_t mul(uint64_t a, uint64_t b);
 
 struct ModMultiplies {
@@ -118,17 +121,16 @@ __global__ void kernel_mark_group_starts(int cnt_prefs, PrefixInfo *dev_prefs, i
 
 __global__ void kernel_get_group_starts(int cnt_prefs, int *dev_group_start_markers, int *dev_group_starts);
 
-__global__ void kernel_solve_group_child(
-    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
-    PrefixInfo *dev_prefs, int pref_l, int pref_r,
-    int ts_l, int ts_r, TsInfo *dev_ts_info,
-    int cnt_suff_lens, int *dev_suff_lens
-);
-
-__global__ void kernel_solve_halfway_group(
-    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
+__global__ void kernel_halfway_group_get_ts_ends(
     int cnt_groups, int *dev_group_starts,
     int cnt_prefs, PrefixInfo *dev_prefs,
-    int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info,
+    int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info, thrust::pair<int, int> *dev_group_ts_ends
+);
+
+__global__ void kernel_solve_groups(
+    int q, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
+    int cnt_groups, int *dev_group_starts,
+    int cnt_prefs, PrefixInfo *dev_prefs,
+    int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info, thrust::pair<int, int> *dev_group_ts_ends,
     int cnt_suff_lens, int *dev_suff_lens
 );

@@ -96,7 +96,7 @@ int main() {
         for (int i = 0; i < q; i++) {
             std::cin >> t;
 
-            int pref_len = 1 << (31 - __builtin_clz(t.size()));
+            int pref_len = get_msb(t.size());
             hst_ts_info[i].suff_len = (int)t.size() - pref_len;
             hst_ts_info[i].len = t.size();
             hst_ts_info[i].ind = i;
@@ -180,6 +180,7 @@ int main() {
     }
     
     thrust::device_vector<PrefixInfo> dev_prefs(n);
+    thrust::device_vector<thrust::pair<int, int>> dev_group_ts_ends(n);
 
     for (int off = 0; off+1 < (int)hst_ts_pref_offsets.size(); off++) {
         int offset = hst_ts_pref_offsets[off];
@@ -297,11 +298,18 @@ int main() {
             dev_suff_lens.resize(thrust::unique(dev_suff_lens.begin(), dev_suff_lens.end()) - dev_suff_lens.begin());
         }
 
-        kernel_solve_halfway_group<<<(cnt_groups + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
-            q, p2, thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0]),
+        ///pentru fiecare halfway group, care sunt marginile in ts_msb_l, ts_msb_r: dev_group_ts_ends.
+        kernel_halfway_group_get_ts_ends<<<(cnt_groups + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
             cnt_groups, thrust::raw_pointer_cast(&dev_group_starts[0]),
             cnt_prefs, thrust::raw_pointer_cast(&dev_prefs[0]),
-            ts_msb_l, ts_msb_r, thrust::raw_pointer_cast(&dev_ts_info[0]),
+            ts_msb_l, ts_msb_r, thrust::raw_pointer_cast(&dev_ts_info[0]), thrust::raw_pointer_cast(&dev_group_ts_ends[0])
+        );
+
+        kernel_solve_groups<<<(cnt_prefs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
+            q, thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0]),
+            cnt_groups, thrust::raw_pointer_cast(&dev_group_starts[0]),
+            cnt_prefs, thrust::raw_pointer_cast(&dev_prefs[0]),
+            ts_msb_l, ts_msb_r, thrust::raw_pointer_cast(&dev_ts_info[0]), thrust::raw_pointer_cast(&dev_group_ts_ends[0]),
             dev_suff_lens.size(), thrust::raw_pointer_cast(&dev_suff_lens[0])
         );
     }

@@ -1,5 +1,13 @@
 #include "utils.h"
 
+__host__ __device__ int get_msb(int x) {
+    #if defined(__CUDA_ARCH__)
+        return (1 << (31 - __clz(x)));
+    #else
+        return (1 << (31 - __builtin_clz(x)));
+    #endif
+}
+
 ///a = a * b % M61.
 __host__ __device__ uint64_t mul(uint64_t a, uint64_t b) {
     uint64_t a_hi = a >> 32, a_lo = (uint32_t)a, b_hi = b >> 32, b_lo = (uint32_t)b, ans = 0, tmp = 0;
@@ -101,27 +109,73 @@ __global__ void kernel_get_group_starts(
     }
 }
 
-__global__ void kernel_solve_group_child(
-    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
-    PrefixInfo *dev_prefs, int pref_l, int pref_r,
-    int ts_l, int ts_r, TsInfo *dev_ts_info,
+__global__ void kernel_halfway_group_get_ts_ends(
+    int cnt_groups, int *dev_group_starts,
+    int cnt_prefs, PrefixInfo *dev_prefs,
+    int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info, thrust::pair<int, int> *dev_group_ts_ends
+) {
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= cnt_groups) return;
+
+    int pref_l = dev_group_starts[index];
+    ///halfway group: dev_prefs[pref_l .. pref_r].hh_p e identic. (pref_r = (index == cnt_groups-1? cnt_prefs-1: dev_group_starts[index+1]-1))
+    ///DAR nu exista garantia de la grupuri pentru dev_ts_info[ts_msb_l .. ts_msb_r].hh_p (ca sunt la fel cu itv din dev_prefs).
+    ///in schimb avem garantia ca 1) raspunsul pentru elem din ^^^ poate fi construit doar din dev_prefs[..].
+    ///si 2) elementele din dev_ts_info sunt sortate crescator dupa (hh_pref, hh_suff).
+
+    ///determinam grupul complet, eg limitele din dev_ts_info: [ts_l .. ts_r].
+    int ts_l = ts_msb_r;
+    uint64_t hh_p = dev_prefs[pref_l].hh_p;
+    for (int pas = get_msb(ts_msb_r); pas; pas >>= 1) {
+        if (ts_l - pas >= ts_msb_l && dev_ts_info[ts_l - pas].hh_p >= hh_p) ts_l -= pas;
+    }
+
+    ///nu exista hh_p in ts_info.
+    if (dev_ts_info[ts_l].hh_p != hh_p) {
+        dev_group_ts_ends[index] = thrust::make_pair(-1, -1);
+    } else {
+        int ts_r = ts_l;
+        for (int pas = get_msb(ts_msb_r - ts_l + 1); pas; pas >>= 1) {
+            if (ts_r + pas <= ts_msb_r && dev_ts_info[ts_r + pas].hh_p == hh_p) ts_r += pas;
+        }
+
+        dev_group_ts_ends[index] = thrust::make_pair(ts_l, ts_r);
+    }
+}
+
+__global__ void kernel_solve_groups(
+    int q, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
+    int cnt_groups, int *dev_group_starts,
+    int cnt_prefs, PrefixInfo *dev_prefs,
+    int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info, thrust::pair<int, int> *dev_group_ts_ends,
     int cnt_suff_lens, int *dev_suff_lens
 ) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index >= pref_r - pref_l + 1) return;
+    if (index >= cnt_prefs) return;
 
-    int pref_ind = pref_l + index, lev = dev_prefs[index].lev;
+    int ts_l, ts_r;
+    {
+        int z = 0;
+        for (int pas = get_msb(cnt_groups); pas; pas >>= 1) {
+            if (z + pas < cnt_groups && dev_group_starts[z+pas] <= index) z += pas;
+        }
+        ts_l = dev_group_ts_ends[z].first;
+        ts_r = dev_group_ts_ends[z].second;
+    }
 
-    ///calculam pentru dev_prefs[pref_ind].hh_s(hade) hh_s(uff) pentru toate dev_suff_lens.
+    if (ts_l == -1) return;    
+    int lev = dev_prefs[index].lev;
+
+    ///calculam pentru dev_prefs[index].hh_s(hade) hh_s(uff) pentru toate dev_suff_lens.
     for (int i = 0; i < cnt_suff_lens; i++) {
         ///sh_start, sh_end.
-        int l = dev_prefs[pref_ind].sh_start, r = l + dev_suff_lens[i] - 1;
-        if (r <= dev_prefs[pref_ind].sh_end) {
+        int l = dev_prefs[index].sh_start, r = l + dev_suff_lens[i] - 1;
+        if (r <= dev_prefs[index].sh_end) {
             uint64_t hh_suff = dev_s_cuts[r+1], hh_suff_sub = mul(dev_s_cuts[l], dev_base_pws[r-l+1]);
             hh_suff = (hh_suff < hh_suff_sub? M61 + hh_suff - hh_suff_sub: hh_suff - hh_suff_sub);
 
             int j = ts_r;
-            for (int pas = (1<<30); pas; pas >>= 1) {
+            for (int pas = get_msb(ts_r-ts_l+1); pas; pas >>= 1) {
                 if (j - pas >= ts_l && dev_ts_info[j-pas].hh_s >= hh_suff) j -= pas;
             }
 
@@ -131,7 +185,7 @@ __global__ void kernel_solve_group_child(
                     if (j+1 < q) atomicAdd(&dev_ts_info[j+1].count, -lev);
                 } else { ///trebuie sa cautam binar ultimul match.
                     int z = j;
-                    for (int pas = (1<<30); pas; pas >>= 1) {
+                    for (int pas = get_msb(ts_r-j+1); pas; pas >>= 1) {
                         if (z + pas <= ts_r && dev_ts_info[z+pas].hh_s == hh_suff) z += pas;
                     }
                     if (z+1 < q) atomicAdd(&dev_ts_info[z+1].count, -lev);
@@ -139,39 +193,4 @@ __global__ void kernel_solve_group_child(
             }
         }
     }
-}
-
-__global__ void kernel_solve_halfway_group(
-    int q, int p2, uint64_t *dev_base_pws, uint64_t *dev_s_cuts,
-    int cnt_groups, int *dev_group_starts,
-    int cnt_prefs, PrefixInfo *dev_prefs,
-    int ts_msb_l, int ts_msb_r, TsInfo *dev_ts_info,
-    int cnt_suff_lens, int *dev_suff_lens
-) {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index >= cnt_groups) return;
-
-    int pref_l = dev_group_starts[index], pref_r = (index == cnt_groups-1? cnt_prefs - 1: dev_group_starts[index+1] - 1);
-
-    ///halfway group: dev_prefs[pref_l .. pref_r].hh_p e identic.
-    ///DAR nu exista garantia de la grupuri pentru dev_ts_info[ts_msb_l .. ts_msb_r].hh_p (ca sunt la fel cu itv din dev_prefs).
-    ///in schimb avem garantia ca 1) raspunsul pentru elem din ^^^ poate fi construit doar din dev_prefs[..].
-    ///si 2) elementele din dev_ts_info sunt sortate crescator dupa (hh_pref, hh_suff).
-
-    ///determinam grupul complet, eg limitele din dev_ts_info: [ts_l .. ts_r].
-    int ts_l = ts_msb_r;
-    uint64_t hh_p = dev_prefs[pref_l].hh_p;
-    for (int pas = (1<<30); pas; pas >>= 1) {
-        if (ts_l - pas >= ts_msb_l && dev_ts_info[ts_l - pas].hh_p >= hh_p) ts_l -= pas;
-    }
-
-    if (dev_ts_info[ts_l].hh_p != hh_p) return; ///nu exista hh_p in ts_info.
-    int ts_r = ts_l;
-    for (int pas = (1<<30); pas; pas >>= 1) {
-        if (ts_r + pas <= ts_msb_r && dev_ts_info[ts_r + pas].hh_p == hh_p) ts_r += pas;
-    }
-
-    kernel_solve_group_child<<<(pref_r-pref_l + THREADS_PER_BLOCK) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
-        q, p2, dev_base_pws, dev_s_cuts, dev_prefs, pref_l, pref_r, ts_l, ts_r, dev_ts_info, cnt_suff_lens, dev_suff_lens
-    );
 }
