@@ -1,9 +1,11 @@
 #include "utils.h"
 
-int main() {
-    std::ios::sync_with_stdio(false); std::cin.tie(0); std::cout.tie(0);
+int main(int argc, char *argv[]) {
+    assert(argc == 3);
+    std::ifstream fin(argv[1]);
+    std::ofstream fout(argv[2]);
 
-    std::string s; std::cin >> s;
+    std::string s; fin >> s;
     int n = s.size();
 
     std::mt19937_64 mt(time(NULL));
@@ -30,7 +32,7 @@ int main() {
         thrust::transform(tmp.begin(), tmp.end(), dev_s_cuts.begin(), [] __device__ (thrust::pair<uint64_t, int> p) { return p.first; });
     }
 
-    int q; std::cin >> q;
+    int q; fin >> q;
 
     thrust::device_vector<TsInfo> dev_ts_info(q);
     int m = 0;
@@ -94,7 +96,7 @@ int main() {
 
         std::string t;
         for (int i = 0; i < q; i++) {
-            std::cin >> t;
+            fin >> t;
 
             int pref_len = get_msb(t.size());
             hst_ts_info[i].suff_len = (int)t.size() - pref_len;
@@ -346,7 +348,7 @@ int main() {
         thrust::copy(dev_ts_count_out.begin(), dev_ts_count_out.end(), hst_ts_count.begin());
     }
 
-    for (int cnt: hst_ts_count) std::cout << cnt << '\n';
+    for (int cnt: hst_ts_count) fout << cnt << '\n';
 
     return 0;
 }
