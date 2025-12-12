@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <typeinfo>
 #include <iomanip>
 #include <fstream>
 #include <climits>
@@ -23,41 +24,14 @@
 #include <map>
 
 #define aaa system("read -r -p \"Press enter to continue...\" key");
-#define dbg(x) std::cerr<<(#x)<<": "<<(x)<<'\n',aaa
-#define dbga(x,n) std::cerr<<(#x)<<"[]: ";for(int _=0;_<n;_++)std::cerr<<x[_]<<' ';std::cerr<<'\n',aaa
-#define dbgs(x) std::cerr<<(#x)<<"[stl]: ";for(auto _:x)std::cerr<<_<<' ';std::cerr<<'\n',aaa
-#define dbgp(x) std::cerr<<(#x)<<": "<<x.fi<<' '<<x.se<<'\n',aaa
-#define dbgsp(x) std::cerr<<(#x)<<"[stl pair]:\n";for(auto _:x)std::cerr<<_.fi<<' '<<_.se<<'\n';aaa
-#define fi first
-#define se second
+#define NAME(x) (#x)
+#define DBG(x) std::cerr<<(#x)<<": "<<(x)<<'\n';
+#define DBGA(x,n) { std::cerr<<(#x)<<"[]: "; for(int _=0;_<n;_++) std::cerr<<x[_]<<' '; std::cerr<<'\n'; }
+#define DBGS(x) { std::cerr<<(#x)<<"[stl]: "; for(auto _: x) std::cerr<<_<<' '; std::cerr<<'\n'; }
+#define DBGP(x) std::cerr<<(#x)<<": "<<x.first<<' '<<x.second<<'\n';
+#define DBGSP(x) { std::cerr<<(#x)<<"[stl pair]:\n"; for(auto _: x) std::cerr<<_.first<<' '<<_.second<<'\n'; }
 
 using uint128_t = unsigned __int128;
-
-namespace cub {
-    template <>
-    struct Traits<uint128_t> {
-        enum {
-            BITS = sizeof(uint128_t) * CHAR_BIT,
-            CATEGORY = 0,
-            IsFloatingPoint = 0
-        };
-
-        static const uint128_t LOWEST_KEY = 0;
-        static const uint128_t MAX_KEY = ~(uint128_t)0;
-
-        typedef uint128_t UnsignedBits;
-        typedef __int128 SignedBits;
-        typedef uint128_t RawType;
-        typedef uint128_t TwiddleIn;
-        typedef uint128_t TwiddleOut;
-    };
-}
-
-struct Uint128Equality {
-    __host__ __device__ bool operator()(uint128_t const &a, uint128_t const &b) const {
-        return a == b;
-    }
-};
 
 const int THREADS_PER_BLOCK = 256;
 const int MAXM_STREAMING = 1'000'000; ///1'000'000'000
@@ -78,6 +52,54 @@ struct TsInfo {
     int len, suff_len; ///lungime, lungimea sufixului. tin minte si lungimea totala ptc calculez hh_ps imediat cum primesc un t, nu-l tin pe tot in memorie.
     int ind; ///indexul in ts.
     int count; ///raspunsul.
+};
+
+
+template<typename T>
+void dbgd(thrust::device_vector<T> &d) {
+    thrust::host_vector<T> h = d;
+    std::cerr << " [device vector of size " << h.size() << "]:\n";
+    for (int i = 0; i < (int)h.size(); i++) {
+        if constexpr (std::is_same_v<T, TsInfo>) {
+            std::cerr << "[" << i << "]: " << "len(" << h[i].len << "), suff_len(" << h[i].suff_len << "), ind(" << h[i].ind <<
+                         "), count(" << h[i].count << "), hh_p(" << h[i].hh_p << "), hh_s(" << h[i].hh_s << ")\n";
+        } else if constexpr (std::is_same_v<T, PrefixInfo>) {
+            std::cerr << "[" << i << "]: " << "sh_start(" << h[i].sh_start << "), sh_end(" << h[i].sh_end << "), lev(" << h[i].lev <<
+                         "), hh_p(" << h[i].hh_p << "), hh_s(" << h[i].hh_s << ")\n";
+        } else if constexpr (std::is_same_v<T, uint128_t>) {
+            std::cerr << "<" << (uint64_t)(h[i] >> 64) << ", " << (uint64_t)h[i] << ">" << (i+1 < (int)h.size()? ", ": "");
+        } else {
+            std::cerr << h[i] << ' ';
+        }
+    }
+    std::cerr << '\n';
+}
+#define DBGD(type, d) { std::cerr << NAME(d); dbgd<type>(d); }
+
+namespace cub {
+    template <>
+    struct Traits<uint128_t> {
+        enum {
+            BITS = sizeof(uint128_t) * CHAR_BIT, ///wtf)))) sizeof(uint128_t) * CHAR_BIT: 128 -- trebuie 1024..
+            CATEGORY = 0,
+            IsFloatingPoint = 0
+        };
+
+        static const uint128_t LOWEST_KEY = 0;
+        static const uint128_t MAX_KEY = ~(uint128_t)0;
+
+        typedef uint128_t UnsignedBits;
+        typedef __int128 SignedBits;
+        typedef uint128_t RawType;
+        typedef uint128_t TwiddleIn;
+        typedef uint128_t TwiddleOut;
+    };
+}
+
+struct Uint128Equality {
+    __host__ __device__ bool operator()(uint128_t const &a, uint128_t const &b) const {
+        return a == b;
+    }
 };
 
 __host__ __device__ int get_msb(int x);
@@ -115,7 +137,7 @@ __global__ void kernel_insert_leverage_margins(int cnt_prefs, int *dev_levs_out,
 
 __global__ void kernel_extract_unique_prefs(int cnt_prefs, int *dev_levs_margins, PrefixInfo *dev_prefs_in, PrefixInfo *dev_prefs_out);
 
-__global__ void kernel_extract_ts_pref_len_offsets(int q, int *pref_lens, int *pref_offsets);
+__global__ void kernel_extract_ts_pref_len_offsets(int q, int *dev_pref_lens, int *dev_pref_offsets);
 
 __global__ void kernel_mark_group_starts(int cnt_prefs, PrefixInfo *dev_prefs, int *dev_group_start_markers);
 

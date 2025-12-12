@@ -9,7 +9,8 @@ int main(int argc, char *argv[]) {
     int n = s.size();
 
     std::mt19937_64 mt(time(NULL));
-    uint64_t base = std::uniform_int_distribution<uint64_t>(257, M61 - 1)(mt);
+    // uint64_t base = std::uniform_int_distribution<uint64_t>(257, M61 - 1)(mt);
+    uint64_t base = 257; //std::uniform_int_distribution<uint64_t>(257, M61 - 1)(mt);
 
     ///calcul dev_base_pws.
     thrust::device_vector<uint64_t> dev_base_pws(n+1);
@@ -17,6 +18,8 @@ int main(int argc, char *argv[]) {
         thrust::device_vector<uint64_t> tmp(n+1, base); tmp[0] = 1;
         thrust::inclusive_scan(tmp.begin(), tmp.end(), dev_base_pws.begin(), ModMultiplies());        
     }
+
+    // DBGD(uint64_t, dev_base_pws); ///ok.
 
     ///calcul dev_s_cuts.
     thrust::device_vector<uint64_t> dev_s_cuts(n+1);
@@ -31,6 +34,8 @@ int main(int argc, char *argv[]) {
         thrust::inclusive_scan(tmp.begin(), tmp.end(), tmp.begin(), PrefSumModMultiples(dev_base_pws));
         thrust::transform(tmp.begin(), tmp.end(), dev_s_cuts.begin(), [] __device__ (thrust::pair<uint64_t, int> p) { return p.first; });
     }
+
+    // DBGD(uint64_t, dev_s_cuts); ///ok.
 
     int q; fin >> q;
 
@@ -61,6 +66,9 @@ int main(int argc, char *argv[]) {
             );
             thrust::inclusive_scan(dev_keys.begin(), dev_keys.end(), dev_keys.begin());
 
+            // DBGD(int, dev_set_keys_at);
+            // DBGD(int, dev_keys);
+
             void *dev_temp_storage = nullptr;
             size_t temp_storage_bytes = 0;
             cub::DeviceScan::InclusiveScanByKey(
@@ -77,15 +85,18 @@ int main(int argc, char *argv[]) {
             );
             cudaFree(dev_temp_storage);
 
-            thrust::device_vector<uint64_t> dev_hh_finals(sseg_end_i - sseg_start_i + 1);
+            thrust::device_vector<uint64_t> dev_hh_finals(hst_set_keys_at.size()); ///sseg_end_i - sseg_start_i + 1
             kernel_extract_segment_finals<<<(sseg_m + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
                 sseg_m, thrust::raw_pointer_cast(&dev_keys[0]), thrust::raw_pointer_cast(&dev_tmp_out[0]), thrust::raw_pointer_cast(&dev_hh_finals[0])
             );
+
+            // DBGD(uint64_t, dev_hh_finals);
 
             thrust::host_vector<uint64_t> hst_hh_finals = dev_hh_finals;
             for (int j = sseg_start_i, z = 0; j <= sseg_end_i; j++) {
                 hst_ts_info[j].hh_p = hst_hh_finals[z++];
                 if (hst_ts_info[j].suff_len > 0) hst_ts_info[j].hh_s = hst_hh_finals[z++];
+                else hst_ts_info[j].hh_s = 0;
             }
 
             hst_set_keys_at.clear();
@@ -97,6 +108,7 @@ int main(int argc, char *argv[]) {
         std::string t;
         for (int i = 0; i < q; i++) {
             fin >> t;
+            // DBG(t);
 
             int pref_len = get_msb(t.size());
             hst_ts_info[i].suff_len = (int)t.size() - pref_len;
@@ -114,8 +126,9 @@ int main(int argc, char *argv[]) {
         }
 
         flush_streaming_segment(q-1);
-
         dev_ts_info = hst_ts_info;
+
+        // DBGD(TsInfo, dev_ts_info);
     }
 
     // std::sort(ts_tmp.begin(), ts_tmp.begin() + k, [](const TsInfo &a, const TsInfo &b) {
@@ -141,10 +154,16 @@ int main(int argc, char *argv[]) {
         cub::DeviceRadixSort::SortPairs(dev_temp_storage, temp_storage_bytes, thrust::raw_pointer_cast(&dev_pref_lens[0]), thrust::raw_pointer_cast(&dev_pref_lens_out[0]), thrust::raw_pointer_cast(&dev_ts_info[0]), thrust::raw_pointer_cast(&dev_ts_info_out[0]), q);
         cudaFree(dev_temp_storage);
 
+        // DBGD(int, dev_pref_lens);
+        // DBGD(int, dev_pref_lens_out);
+        // DBGD(TsInfo, dev_ts_info_out);
+
         dev_pref_lens = dev_pref_lens_out;
         kernel_extract_ts_pref_len_offsets<<<(q + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
             q, thrust::raw_pointer_cast(&dev_pref_lens[0]), thrust::raw_pointer_cast(&dev_ts_pref_offsets[0])
         );
+
+        // DBGD(int, dev_ts_pref_offsets);
 
         thrust::host_vector<int> tmp_off1 = dev_ts_pref_offsets, tmp_off2(dev_ts_pref_offsets.size());
         for (int i = 0; i < (int)tmp_off1.size(); i++) {
@@ -155,6 +174,8 @@ int main(int argc, char *argv[]) {
         tmp_off2.resize(cnt_offsets + 1);
         dev_ts_pref_offsets = tmp_off2;
         hst_ts_pref_offsets = tmp_off2;
+
+        // DBGD(int, dev_ts_pref_offsets);
 
         ///offsets = pref len diferite, value = TsInfo(..), key = prefix & sufix combinat in uint128_t.
         thrust::device_vector<uint128_t> dev_keys_in(q), dev_keys_out(q);
@@ -179,6 +200,10 @@ int main(int argc, char *argv[]) {
             thrust::raw_pointer_cast(&dev_ts_pref_offsets[0]), thrust::raw_pointer_cast(&dev_ts_pref_offsets[0]) + 1
         );
         cudaFree(dev_temp_storage);
+
+        // DBGD(uint128_t, dev_keys_in);
+        // DBGD(uint128_t, dev_keys_out);
+        // DBGD(TsInfo, dev_ts_info);
     }
     
     thrust::device_vector<PrefixInfo> dev_prefs(n);
@@ -192,11 +217,17 @@ int main(int argc, char *argv[]) {
 
         int p2 = info.len - info.suff_len, ts_msb_l = offset, ts_msb_r = hst_ts_pref_offsets[off+1]-1;
 
+        DBG(p2);
+        DBGP(std::make_pair(ts_msb_l, ts_msb_r));
+
         ///generez toate subsecv de lungime p2 din s, shade-urile lor, tin minte locatiile shade-urilor.
         int cnt_prefs = n+1 - p2;
         kernel_compute_prefix_info<<<(cnt_prefs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
             n, cnt_prefs, p2, thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0])
         );
+
+        std::cerr << "initial dev_prefs:\n";
+        DBGD(PrefixInfo, dev_prefs);
 
         {
             thrust::device_vector<uint128_t> dev_tmp_cat_hh_ps_in(cnt_prefs);
@@ -205,18 +236,20 @@ int main(int argc, char *argv[]) {
                 [] __device__ (const PrefixInfo &p) { return ((uint128_t)p.hh_p << 64) | p.hh_s; }
             );
 
+            DBGD(uint128_t, dev_tmp_cat_hh_ps_in);
+
             // std::sort(prefs.begin(), prefs.begin() + cnt_prefs, [](const PrefixInfo &a, const PrefixInfo &b) { return a.hh_ps < b.hh_ps; });
             {
                 thrust::device_vector<uint128_t> dev_tmp_cat_hh_ps_out(cnt_prefs);
-
                 thrust::device_vector<PrefixInfo> dev_prefs_out(cnt_prefs);
+
                 void *dev_temp_storage = nullptr;
                 size_t temp_storage_bytes = 0;
                 cub::DeviceRadixSort::SortPairs(
                     dev_temp_storage, temp_storage_bytes,
                     thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_in[0]), thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_out[0]),
                     thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_prefs_out[0]),
-                    cnt_prefs
+                    cnt_prefs/*, 64, 128*/
                 );
                 
                 cudaMalloc(&dev_temp_storage, temp_storage_bytes);
@@ -224,11 +257,15 @@ int main(int argc, char *argv[]) {
                     dev_temp_storage, temp_storage_bytes,
                     thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_in[0]), thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_out[0]),
                     thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_prefs_out[0]),
-                    cnt_prefs
+                    cnt_prefs/*, 64, 128*/
                 );
                 cudaFree(dev_temp_storage);
 
                 dev_prefs = dev_prefs_out;
+
+                std::cerr << "after sort prefs:\n";
+                DBGD(uint128_t, dev_tmp_cat_hh_ps_out);
+                DBGD(PrefixInfo, dev_prefs);
             }
 
             ///scapam de pref + shade identice.
@@ -251,6 +288,9 @@ int main(int argc, char *argv[]) {
                 );
                 cudaFree(dev_temp_storage);
 
+                // DBGD(int, dev_levs_in);
+                // DBGD(int, dev_levs_out);
+
                 thrust::device_vector<int> dev_levs_margins(cnt_prefs);
                 kernel_insert_leverage_margins<<<(cnt_prefs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
                     cnt_prefs, thrust::raw_pointer_cast(&dev_levs_out[0]), thrust::raw_pointer_cast(&dev_levs_margins[0])
@@ -269,6 +309,12 @@ int main(int argc, char *argv[]) {
 
                 thrust::copy(dev_prefs_out.begin(), dev_prefs_out.begin() + cnt_prefs, dev_prefs.begin());
             }
+
+            // std::cerr << "after culling duplicate shades:\n";
+            // DBG(cnt_prefs);
+            // DBGD(PrefixInfo, dev_prefs); ///TODO cumva tii si un (hh_p, hh_s) de la un msb mai mic, chiar dc cnt_prefs e mai mic..
+
+            std::cerr << "---\n";
         }
 
         ///calculez raspunsul pentru elementele din ts_info[] care au MSB egal cu p2 (eg [ts_msb_l, ts_msb_r]).

@@ -81,13 +81,13 @@ __global__ void kernel_extract_unique_prefs(
 ///am un vector sortat cu lungimile prefixelor din ts (pref_lens). trebuie sa construiesc un vector de offset-uri, la ce index incepe urmatorul segment
 ///de lungimi de prefixe. prefixele sunt puteri de 2, deci sunt doar O(log ??) offset-uri diferite.
 __global__ void kernel_extract_ts_pref_len_offsets(
-    int q, int *pref_lens, int *pref_offsets
+    int q, int *dev_pref_lens, int *dev_pref_offsets
 ) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < q && (index == 0 || pref_lens[index] != pref_lens[index-1])) {
-        int log2_index = 0, p = pref_lens[index];
+    if (index < q && (index == 0 || dev_pref_lens[index] != dev_pref_lens[index-1])) {
+        int log2_index = 0, p = dev_pref_lens[index];
         while (p > 1) { log2_index++; p >>= 1; }
-        pref_offsets[log2_index] = index;
+        dev_pref_offsets[log2_index] = index;
     }
 }
 
