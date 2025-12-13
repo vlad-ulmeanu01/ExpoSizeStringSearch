@@ -9,8 +9,7 @@ int main(int argc, char *argv[]) {
     int n = s.size();
 
     std::mt19937_64 mt(time(NULL));
-    // uint64_t base = std::uniform_int_distribution<uint64_t>(257, M61 - 1)(mt);
-    uint64_t base = 257; //std::uniform_int_distribution<uint64_t>(257, M61 - 1)(mt);
+    uint64_t base = std::uniform_int_distribution<uint64_t>(257, M61 - 1)(mt);
 
     ///calcul dev_base_pws.
     thrust::device_vector<uint64_t> dev_base_pws(n+1);
