@@ -316,7 +316,9 @@ int main(int argc, char *argv[]) {
                 cnt_prefs, thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_group_start_markers[0])
             );
 
+            DBGD(int, dev_group_start_markers);
             thrust::inclusive_scan(dev_group_start_markers.begin(), dev_group_start_markers.end(), dev_group_start_markers.begin());
+            DBGD(int, dev_group_start_markers);
 
             thrust::copy(dev_group_start_markers.begin() + cnt_prefs-1, dev_group_start_markers.begin() + cnt_prefs, &cnt_groups);
 
@@ -326,6 +328,9 @@ int main(int argc, char *argv[]) {
             );
         }
 
+        DBG(cnt_groups);
+        DBGD(int, dev_group_starts);
+
         ///ce lungimi de sufixe avem in halfway group?
         thrust::device_vector<int> dev_suff_lens(ts_msb_r-ts_msb_l+1);
         {
@@ -333,6 +338,8 @@ int main(int argc, char *argv[]) {
             thrust::sort(dev_suff_lens.begin(), dev_suff_lens.end());
             dev_suff_lens.resize(thrust::unique(dev_suff_lens.begin(), dev_suff_lens.end()) - dev_suff_lens.begin());
         }
+
+        DBGD(int, dev_suff_lens);
 
         ///pentru fiecare halfway group, care sunt marginile in ts_msb_l, ts_msb_r: dev_group_ts_ends.
         kernel_halfway_group_get_ts_ends<<<(cnt_groups + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(

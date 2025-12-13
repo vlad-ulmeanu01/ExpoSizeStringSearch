@@ -106,7 +106,7 @@ __global__ void kernel_get_group_starts(
 ) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < cnt_prefs && (index == 0 || dev_group_start_markers[index] != dev_group_start_markers[index-1])) {
-        dev_group_starts[dev_group_starts[index]-1] = index;
+        dev_group_starts[dev_group_start_markers[index]-1] = index;
     }
 }
 
@@ -164,7 +164,7 @@ __global__ void kernel_solve_groups(
         ts_r = dev_group_ts_ends[z].second;
     }
 
-    if (ts_l == -1) return;    
+    if (ts_l == -1) return;
     int lev = dev_prefs[index].lev;
 
     ///calculam pentru dev_prefs[index].hh_s(hade) hh_s(uff) pentru toate dev_suff_lens.
@@ -172,8 +172,12 @@ __global__ void kernel_solve_groups(
         ///sh_start, sh_end.
         int l = dev_prefs[index].sh_start, r = l + dev_suff_lens[i] - 1;
         if (r <= dev_prefs[index].sh_end) {
-            uint64_t hh_suff = dev_s_cuts[r+1], hh_suff_sub = mul(dev_s_cuts[l], dev_base_pws[r-l+1]);
-            hh_suff = (hh_suff < hh_suff_sub? M61 + hh_suff - hh_suff_sub: hh_suff - hh_suff_sub);
+            uint64_t hh_suff = 0;
+            if (l <= r) {
+                hh_suff = dev_s_cuts[r+1];
+                uint64_t hh_suff_sub = mul(dev_s_cuts[l], dev_base_pws[r-l+1]);
+                hh_suff = (hh_suff < hh_suff_sub? M61 + hh_suff - hh_suff_sub: hh_suff - hh_suff_sub);
+            }
 
             int j = ts_r;
             for (int pas = get_msb(ts_r-ts_l+1); pas; pas >>= 1) {
