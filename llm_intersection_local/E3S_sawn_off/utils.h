@@ -4,6 +4,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/transform.h>
 #include <thrust/generate.h>
+#include <thrust/unique.h>
 #include <thrust/sort.h>
 #include <thrust/copy.h>
 #include <thrust/pair.h>
@@ -76,25 +77,11 @@ void dbgd(thrust::device_vector<T> &d) {
 }
 #define DBGD(type, d) { std::cerr << NAME(d); dbgd<type>(d); }
 
-namespace cub {
-    template <>
-    struct Traits<uint128_t> {
-        enum {
-            BITS = sizeof(uint128_t) * CHAR_BIT, ///wtf)))) sizeof(uint128_t) * CHAR_BIT: 128 -- trebuie 1024..
-            CATEGORY = 0,
-            IsFloatingPoint = 0
-        };
-
-        static const uint128_t LOWEST_KEY = 0;
-        static const uint128_t MAX_KEY = ~(uint128_t)0;
-
-        typedef uint128_t UnsignedBits;
-        typedef __int128 SignedBits;
-        typedef uint128_t RawType;
-        typedef uint128_t TwiddleIn;
-        typedef uint128_t TwiddleOut;
-    };
-}
+struct IntSum {
+    __host__ __device__ int operator()(int const &a, int const &b) const {
+        return a + b;
+    }
+};
 
 struct Uint128Equality {
     __host__ __device__ bool operator()(uint128_t const &a, uint128_t const &b) const {
@@ -135,7 +122,7 @@ __global__ void kernel_extract_segment_finals(int sseg_m, int *dev_keys, thrust:
 
 __global__ void kernel_insert_leverage_margins(int cnt_prefs, int *dev_levs_out, int *dev_levs_margins);
 
-__global__ void kernel_extract_unique_prefs(int cnt_prefs, int *dev_levs_margins, PrefixInfo *dev_prefs_in, PrefixInfo *dev_prefs_out);
+__global__ void kernel_extract_unique_prefs(int cnt_prefs, int *dev_levs_out, int *dev_levs_margins, PrefixInfo *dev_prefs_in, PrefixInfo *dev_prefs_out);
 
 __global__ void kernel_extract_ts_pref_len_offsets(int q, int *dev_pref_lens, int *dev_pref_offsets);
 

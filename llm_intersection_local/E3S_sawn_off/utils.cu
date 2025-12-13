@@ -69,12 +69,13 @@ __global__ void kernel_insert_leverage_margins(
 }
 
 __global__ void kernel_extract_unique_prefs(
-    int cnt_prefs, int *dev_levs_margins, PrefixInfo *dev_prefs_in, PrefixInfo *dev_prefs_out
+    int cnt_prefs, int *dev_levs_out, int *dev_levs_margins, PrefixInfo *dev_prefs_in, PrefixInfo *dev_prefs_out
 ) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < cnt_prefs && (index == cnt_prefs-1 || dev_levs_margins[index] != dev_levs_margins[index+1])) {
+
+    if (index < cnt_prefs && (index == cnt_prefs-1 || dev_levs_out[index+1] == 1)) {
         dev_prefs_out[dev_levs_margins[index]-1] = dev_prefs_in[index];
-        dev_prefs_out[dev_levs_margins[index]-1].lev = dev_levs_margins[index];
+        dev_prefs_out[dev_levs_margins[index]-1].lev = dev_levs_out[index];
     }
 }
 

@@ -226,21 +226,15 @@ int main(int argc, char *argv[]) {
             n, cnt_prefs, p2, thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0])
         );
 
-        std::cerr << "initial dev_prefs:\n";
-        DBGD(PrefixInfo, dev_prefs);
-
         {
-            thrust::device_vector<uint128_t> dev_tmp_cat_hh_ps_in(cnt_prefs);
+            thrust::device_vector<uint128_t> dev_tmp_cat_hh_ps_in(cnt_prefs), dev_tmp_cat_hh_ps_out(cnt_prefs);
             thrust::transform(
                 dev_prefs.begin(), dev_prefs.begin() + cnt_prefs, dev_tmp_cat_hh_ps_in.begin(),
                 [] __device__ (const PrefixInfo &p) { return ((uint128_t)p.hh_p << 64) | p.hh_s; }
             );
 
-            DBGD(uint128_t, dev_tmp_cat_hh_ps_in);
-
             // std::sort(prefs.begin(), prefs.begin() + cnt_prefs, [](const PrefixInfo &a, const PrefixInfo &b) { return a.hh_ps < b.hh_ps; });
             {
-                thrust::device_vector<uint128_t> dev_tmp_cat_hh_ps_out(cnt_prefs);
                 thrust::device_vector<PrefixInfo> dev_prefs_out(cnt_prefs);
 
                 void *dev_temp_storage = nullptr;
@@ -249,7 +243,7 @@ int main(int argc, char *argv[]) {
                     dev_temp_storage, temp_storage_bytes,
                     thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_in[0]), thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_out[0]),
                     thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_prefs_out[0]),
-                    cnt_prefs/*, 64, 128*/
+                    cnt_prefs
                 );
                 
                 cudaMalloc(&dev_temp_storage, temp_storage_bytes);
@@ -257,15 +251,11 @@ int main(int argc, char *argv[]) {
                     dev_temp_storage, temp_storage_bytes,
                     thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_in[0]), thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_out[0]),
                     thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_prefs_out[0]),
-                    cnt_prefs/*, 64, 128*/
+                    cnt_prefs
                 );
                 cudaFree(dev_temp_storage);
 
                 dev_prefs = dev_prefs_out;
-
-                std::cerr << "after sort prefs:\n";
-                DBGD(uint128_t, dev_tmp_cat_hh_ps_out);
-                DBGD(PrefixInfo, dev_prefs);
             }
 
             ///scapam de pref + shade identice.
@@ -276,20 +266,17 @@ int main(int argc, char *argv[]) {
                 size_t temp_storage_bytes = 0;
                 cub::DeviceScan::InclusiveScanByKey(
                     dev_temp_storage, temp_storage_bytes,
-                    thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_in[0]), thrust::raw_pointer_cast(&dev_levs_in[0]), thrust::raw_pointer_cast(&dev_levs_out[0]),
-                    Uint128Equality(), cnt_prefs
+                    thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_out[0]), thrust::raw_pointer_cast(&dev_levs_in[0]), thrust::raw_pointer_cast(&dev_levs_out[0]),
+                    IntSum(), cnt_prefs
                 );
 
                 cudaMalloc(&dev_temp_storage, temp_storage_bytes);
                 cub::DeviceScan::InclusiveScanByKey(
                     dev_temp_storage, temp_storage_bytes,
-                    thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_in[0]), thrust::raw_pointer_cast(&dev_levs_in[0]), thrust::raw_pointer_cast(&dev_levs_out[0]),
-                    Uint128Equality(), cnt_prefs
+                    thrust::raw_pointer_cast(&dev_tmp_cat_hh_ps_out[0]), thrust::raw_pointer_cast(&dev_levs_in[0]), thrust::raw_pointer_cast(&dev_levs_out[0]),
+                    IntSum(), cnt_prefs
                 );
                 cudaFree(dev_temp_storage);
-
-                // DBGD(int, dev_levs_in);
-                // DBGD(int, dev_levs_out);
 
                 thrust::device_vector<int> dev_levs_margins(cnt_prefs);
                 kernel_insert_leverage_margins<<<(cnt_prefs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
@@ -301,7 +288,8 @@ int main(int argc, char *argv[]) {
                 thrust::device_vector<PrefixInfo> dev_prefs_out(cnt_prefs);
 
                 kernel_extract_unique_prefs<<<(cnt_prefs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
-                    cnt_prefs, thrust::raw_pointer_cast(&dev_levs_margins[0]), thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_prefs_out[0])
+                    cnt_prefs, thrust::raw_pointer_cast(&dev_levs_out[0]), thrust::raw_pointer_cast(&dev_levs_margins[0]),
+                    thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_prefs_out[0])
                 );
 
                 ///noul numar de cnt_prefs = ultima valoare din cnt_prefs.
@@ -310,9 +298,9 @@ int main(int argc, char *argv[]) {
                 thrust::copy(dev_prefs_out.begin(), dev_prefs_out.begin() + cnt_prefs, dev_prefs.begin());
             }
 
-            // std::cerr << "after culling duplicate shades:\n";
-            // DBG(cnt_prefs);
-            // DBGD(PrefixInfo, dev_prefs); ///TODO cumva tii si un (hh_p, hh_s) de la un msb mai mic, chiar dc cnt_prefs e mai mic..
+            std::cerr << "after culling duplicate shades:\n";
+            DBG(cnt_prefs);
+            DBGD(PrefixInfo, dev_prefs); ///TODO cumva tii si un (hh_p, hh_s) de la un msb mai mic, chiar dc cnt_prefs e mai mic..
 
             std::cerr << "---\n";
         }
