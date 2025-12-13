@@ -127,13 +127,11 @@ int main(int argc, char *argv[]) {
 
         flush_streaming_segment(q-1);
         dev_ts_info = hst_ts_info;
-
-        // DBGD(TsInfo, dev_ts_info);
     }
 
     // std::sort(ts_tmp.begin(), ts_tmp.begin() + k, [](const TsInfo &a, const TsInfo &b) {
     //     if (a.hh_ps[0] != b.hh_ps[0]) return a.hh_ps[0] < b.hh_ps[0]; ///intai acelasi prefix ca sa putem face grupurile.
-    //     if (a.suff_len != b.suff_len) return a.suff_len < b.suff_len; ///apoi aceeasi lungime. pentru aceeasi lungime putem calcula intr-o sg trecere prin partea cealalta a grupului. (aveam "<"..)
+    //     if (a.suff_len != b.suff_len) return a.suff_len < b.suff_len; ///(nu aici..) apoi aceeasi lungime. pentru aceeasi lungime putem calcula intr-o sg trecere prin partea cealalta a grupului. (aveam "<"..)
     //     return a.hh_ps[1] < b.hh_ps[1]; ///iar in final dupa sufix. daca si sufixul e identic, pot refolosi rezultatul de dinainte.
     // });
     thrust::device_vector<int> dev_ts_pref_offsets(30, -1);
@@ -175,11 +173,14 @@ int main(int argc, char *argv[]) {
         dev_ts_pref_offsets = tmp_off2;
         hst_ts_pref_offsets = tmp_off2;
 
-        // DBGD(int, dev_ts_pref_offsets);
-
         ///offsets = pref len diferite, value = TsInfo(..), key = prefix & sufix combinat in uint128_t.
         thrust::device_vector<uint128_t> dev_keys_in(q), dev_keys_out(q);
-        thrust::transform(dev_ts_info.begin(), dev_ts_info.end(), dev_keys_in.begin(), [] __device__ (const TsInfo &t) { return ((uint128_t)t.hh_p << 64) | t.hh_s; });
+        thrust::transform(dev_ts_info_out.begin(), dev_ts_info_out.end(), dev_keys_in.begin(), [] __device__ (const TsInfo &t) { return ((uint128_t)t.hh_p << 64) | t.hh_s; });
+
+        // std::cerr << "before segmented radix sort:\n";
+        // DBGD(TsInfo, dev_ts_info_out);
+        // DBGD(int, dev_ts_pref_offsets);
+        // DBGD(uint128_t, dev_keys_in);
 
         dev_temp_storage = nullptr;
         temp_storage_bytes = 0;
@@ -201,11 +202,13 @@ int main(int argc, char *argv[]) {
         );
         cudaFree(dev_temp_storage);
 
-        // DBGD(uint128_t, dev_keys_in);
+        // std::cerr << "after segmented radix sort:\n";
         // DBGD(uint128_t, dev_keys_out);
         // DBGD(TsInfo, dev_ts_info);
     }
-    
+
+    // DBG("ok dev_ts_info");
+
     thrust::device_vector<PrefixInfo> dev_prefs(n);
     thrust::device_vector<thrust::pair<int, int>> dev_group_ts_ends(n);
 
@@ -217,11 +220,13 @@ int main(int argc, char *argv[]) {
 
         int p2 = info.len - info.suff_len, ts_msb_l = offset, ts_msb_r = hst_ts_pref_offsets[off+1]-1;
 
-        DBG(p2);
-        DBGP(std::make_pair(ts_msb_l, ts_msb_r));
+        // DBG(p2);
+        // DBGP(std::make_pair(ts_msb_l, ts_msb_r));
 
         ///generez toate subsecv de lungime p2 din s, shade-urile lor, tin minte locatiile shade-urilor.
         int cnt_prefs = n+1 - p2;
+        if (cnt_prefs <= 0) break;
+
         kernel_compute_prefix_info<<<(cnt_prefs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(
             n, cnt_prefs, p2, thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_base_pws[0]), thrust::raw_pointer_cast(&dev_s_cuts[0])
         );
@@ -257,6 +262,8 @@ int main(int argc, char *argv[]) {
 
                 dev_prefs = dev_prefs_out;
             }
+
+            // DBG("ok2");
 
             ///scapam de pref + shade identice.
             {
@@ -298,11 +305,10 @@ int main(int argc, char *argv[]) {
                 thrust::copy(dev_prefs_out.begin(), dev_prefs_out.begin() + cnt_prefs, dev_prefs.begin());
             }
 
-            std::cerr << "after culling duplicate shades:\n";
-            DBG(cnt_prefs);
-            DBGD(PrefixInfo, dev_prefs); ///TODO cumva tii si un (hh_p, hh_s) de la un msb mai mic, chiar dc cnt_prefs e mai mic..
-
-            std::cerr << "---\n";
+            // std::cerr << "after culling duplicate shades:\n";
+            // DBG(cnt_prefs);
+            // DBGD(PrefixInfo, dev_prefs); ///TODO cumva tii si un (hh_p, hh_s) de la un msb mai mic, chiar dc cnt_prefs e mai mic..
+            // std::cerr << "---\n";
         }
 
         ///calculez raspunsul pentru elementele din ts_info[] care au MSB egal cu p2 (eg [ts_msb_l, ts_msb_r]).
@@ -316,9 +322,7 @@ int main(int argc, char *argv[]) {
                 cnt_prefs, thrust::raw_pointer_cast(&dev_prefs[0]), thrust::raw_pointer_cast(&dev_group_start_markers[0])
             );
 
-            DBGD(int, dev_group_start_markers);
             thrust::inclusive_scan(dev_group_start_markers.begin(), dev_group_start_markers.end(), dev_group_start_markers.begin());
-            DBGD(int, dev_group_start_markers);
 
             thrust::copy(dev_group_start_markers.begin() + cnt_prefs-1, dev_group_start_markers.begin() + cnt_prefs, &cnt_groups);
 
@@ -328,18 +332,18 @@ int main(int argc, char *argv[]) {
             );
         }
 
-        DBG(cnt_groups);
-        DBGD(int, dev_group_starts);
+        // DBG(cnt_groups);
+        // DBGD(int, dev_group_starts);
 
         ///ce lungimi de sufixe avem in halfway group?
         thrust::device_vector<int> dev_suff_lens(ts_msb_r-ts_msb_l+1);
         {
-            thrust::transform(dev_ts_info.begin() + ts_msb_l, dev_ts_info.end() + ts_msb_r+1, dev_suff_lens.begin(), [] __device__ (const TsInfo &t) { return t.suff_len; });
+            thrust::transform(dev_ts_info.begin() + ts_msb_l, dev_ts_info.begin() + ts_msb_r+1, dev_suff_lens.begin(), [] __device__ (const TsInfo &t) { return t.suff_len; });
             thrust::sort(dev_suff_lens.begin(), dev_suff_lens.end());
             dev_suff_lens.resize(thrust::unique(dev_suff_lens.begin(), dev_suff_lens.end()) - dev_suff_lens.begin());
         }
 
-        DBGD(int, dev_suff_lens);
+        // DBGD(int, dev_suff_lens);
 
         ///pentru fiecare halfway group, care sunt marginile in ts_msb_l, ts_msb_r: dev_group_ts_ends.
         kernel_halfway_group_get_ts_ends<<<(cnt_groups + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(

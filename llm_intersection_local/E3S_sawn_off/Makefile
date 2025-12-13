@@ -19,8 +19,11 @@ run_coada:
 	$(COADA_BASE) --output=output_run_coada.log --gres gpu:1 --wrap="time ./main $(INFILE) $(OUTFILE)" && $(WATCH)
 
 run_local:
-	time ./main $(INFILE) $(OUTFILE)
+	time ./main $(INFILE) $(OUTFILE) && diff -s $(EXPFILE) $(OUTFILE)
+# 	time ./main $(INFILE) $(OUTFILE)
 
 # FNAME = test_thrust / test_cub_segmented_scan
-# INFILE = test_inputs/input.txt
+# INFILE = test_inputs/input0.txt
+# EXPFILE = test_inputs/expected0.txt
 # OUTFILE = test_inputs/output.txt
+
