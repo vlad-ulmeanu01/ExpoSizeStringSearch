@@ -1,15 +1,15 @@
-#!/bin/sh
+#!/bin/bash
+#SBATCH -p dgxa100
+#SBATCH -t 12:00:00
+#SBATCH --output=output.log
+#SBATCH --mem-per-cpu=32G
+#SBATCH --gres=gpu:1
+#SBATCH --export=ALL
 
-# conda activate hugg &&
-# sbatch -p dgxh100 -t 12:00:00 --mem-per-cpu 32G ./pywrapper.sh &&
-# watch -n 1 squeue -u vlad_adrian.ulmeanu
+VENV_PATH="$HOME/uv_envs/hugg/bin"
 
-# sbatch -p xl -t 12:00:00 --gres gpu:1 --mem-per-cpu 32G ./pywrapper.sh &&
-# sbatch -p dgxa100 -t 12:00:00 --gres gpu:1 --mem-per-cpu 32G ./pywrapper.sh &&
-# watch -n 1 squeue -u vlad_adrian.ulmeanu
+source $VENV_PATH/activate
+time $VENV_PATH/python pythia.py
 
-sbatch -p dgxh100 -t 12:00:00 --output=output.log --gres gpu:1 --mem-per-cpu 32G --wrap="time python pythia_gen.py" &&
-watch -n 1 squeue -u vlad_adrian.ulmeanu
 
-# cat timp a luat rularea jobului:
-# sacct -j <myid> --format=Elapsed
+

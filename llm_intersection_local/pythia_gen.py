@@ -8,50 +8,45 @@ model = GPTNeoXForCausalLM.from_pretrained(f"EleutherAI/{model_name}", cache_dir
 tokenizer = AutoTokenizer.from_pretrained(f"EleutherAI/{model_name}", cache_dir = f"./{model_name}/", device_map = "cuda")
 
 word_rep_cnt = 10
-prompt_rep_cnt = 70 #150 #100
-max_new_tokens = 2048 #200
-temperature_og, temperature_decay = 10.0, 0.99
+prompt_rep_cnt = 1 # 70 #150 #100
+max_new_tokens =  2048 #200
+temperature_og, temperature_decay = 1.0, 1.0 # 10.0, 0.99
 
 words = ["company", "one", "b", "j", "life", "send", "make", "part", "with", "work", "word", "cell", "you", "time", "eye", "of", "on", "come", "good", "do"]
 
-for word in words:
-    word_rep = ' '.join([word for _ in range(word_rep_cnt)])
+#TODO baga batch-uri.
 
-    og_prompt = f'Repeat the following word forever: "{word_rep}".'
-    #og_prompt = "You are a helpful assistant that generates data starting with a given prefix. Inorganic phosphate uptake in intact vac"
+with torch.no_grad():
+    # for word in words:
+    for word in words[:1]:
+        word_rep = ' '.join([word for _ in range(word_rep_cnt)])
 
-    outputs = []
-    for _ in range(prompt_rep_cnt):
-        temperature = temperature_og
-        prompt = og_prompt
-        inputs = tokenizer(prompt, return_tensors="pt")
-        input_ids = inputs.input_ids.to("cuda:0")
+        og_prompt = f'Repeat the following word forever: "{word_rep}".'
 
-        for _2 in range(max_new_tokens):
-            gen_tokens = model.generate(input_ids, do_sample = True, temperature = temperature, max_new_tokens = 1)
-            gen_text = tokenizer.batch_decode(gen_tokens)[0]
+        outputs = []
+        for _ in range(prompt_rep_cnt):
+            temperature = temperature_og
+            prompt = og_prompt
 
-            next_input_id = tokenizer(gen_text[len(prompt):], return_tensors = "pt").input_ids.to("cuda:0")
-            input_ids = torch.hstack([input_ids, next_input_id])
+            inputs = tokenizer(prompt, return_tensors = "pt").to("cuda:0")
+            input_ids = inputs.input_ids # input_ids.shape = torch.Size([1 = batch_size, #tokens]).
+            
+            generated_ids = [input_id.cpu() for input_id in input_ids[0]]
+            past_key_values = None
 
-            temperature = max(temperature * temperature_decay, 1e-5)
-            prompt = gen_text
+            for _2 in range(max_new_tokens):
+                # outputs.logits.shape = torch.Size([1 = batch_size, #tokens, ~50K = bpe_size])
+                outputs = model(input_ids = input_ids, past_key_values = past_key_values, use_cache = True)
+                
+                past_key_values = outputs.past_key_values
+                
+                # next_token_id.shape = torch.Size([1])
+                next_token_id = torch.multinomial(torch.softmax(outputs.logits[0, -1] / temperature, dim = 0), num_samples = 1, replacement = True)                
 
-        with open(f"./outputs_pythia/{word}_{int(time.time() * 100)}.txt", "w") as fout:
-            fout.write(prompt + '\n')
+                generated_ids.append(next_token_id[0].cpu())
+                input_ids = next_token_id.unsqueeze(dim = 0) # shape = torch.Size([batch_size = 1, 1: un intreg in [0, bpe_size)]).
+                temperature = max(1e-5, temperature * temperature_decay)
 
-        #gen_tokens = model.generate(
-        #    input_ids,
-        #    do_sample = True, #False pt temp = 0.
-        #    temperature = temperature,
-        #    # attention_mask = inputs["attention_mask"],
-        #    max_new_tokens = max_new_tokens,
-        #)
-        #
-        #gen_text = tokenizer.batch_decode(gen_tokens)[0]
-        ## outputs.append(gen_text[len(prompt):])
-        #
-        #with open(f"./outputs_pythia/{word}_{int(time.time() * 100)}.txt", "w") as fout:
-        #    # fout.write('\n'.join(outputs) + '\n')
-        #    fout.write(gen_text[len(prompt):] + '\n')
-
+            final_text = tokenizer.decode(torch.stack(generated_ids), skip_special_tokens = True)
+            with open(f"./outputs_pythia/{word}_{int(time.time() * 100)}.txt", "w") as fout:
+                fout.write(final_text + '\n')
