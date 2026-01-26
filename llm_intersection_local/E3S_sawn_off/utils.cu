@@ -1,5 +1,16 @@
 #include "utils.h"
 
+std::string pad_parquet_fname(int ind) {
+    std::stringstream ss;
+    ss << std::setfill('0') << std::setw(5) << ind;
+    return ss.str();
+}
+
+uint64_t get_filesize(std::string fname) {
+    std::filesystem::path p(fname);
+    return std::filesystem::file_size(p);
+}
+
 __host__ __device__ int get_msb(int x) {
     #if defined(__CUDA_ARCH__)
         return (1 << (31 - __clz(x)));

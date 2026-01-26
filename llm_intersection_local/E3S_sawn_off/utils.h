@@ -10,6 +10,14 @@
 #include <thrust/pair.h>
 #include <cub/cub.cuh>
 
+#include <parquet/arrow/reader.h>
+#include <arrow/chunked_array.h>
+#include <arrow/pretty_print.h>
+#include <arrow/io/api.h>
+#include <arrow/array.h>
+#include <arrow/type.h>
+
+#include <filesystem>
 #include <algorithm>
 #include <iostream>
 #include <typeinfo>
@@ -34,8 +42,27 @@
 
 using uint128_t = unsigned __int128;
 
-const int THREADS_PER_BLOCK = 256;
-const int MAXM_STREAMING = 1'000'000; ///1'000'000'000
+constexpr bool DEBUG_FLAG = true;
+constexpr uint64_t DEBUG_SEED = 8701438702UL;
+
+const bool RUN_LOCAL = true;
+
+const int CNT_PARQUET_FILES = -1; //4; ///daca este < 0 => format CSES.
+const std::string PARQUET_DIR = (RUN_LOCAL?
+    "/home/vlad/Documents/SublimeMerge/ExpoSizeStringSearch/llm_intersection_local/intersection_test_files/the_pile_deduplicated/":
+    "/export/home/acs/stud/v/vlad_adrian.ulmeanu/E3S_local/llm_copyright/the_pile_deduplicated/"
+);
+
+const int CNT_ATTACK_FILES = 1; ///trebuie sa fie >= 1.
+const std::string ATTACK_DIR = (RUN_LOCAL?
+    "/home/vlad/Documents/SublimeMerge/ExpoSizeStringSearch/llm_intersection_local/intersection_test_files/outputs_pythia_batched/":
+    "/export/home/acs/stud/v/vlad_adrian.ulmeanu/E3S_local/llm_copyright/outputs_pythia_batched/"
+);
+
+constexpr int PARQUET_BYTES_PER_READ = 100;
+
+constexpr int THREADS_PER_BLOCK = 256;
+constexpr int MAXM_STREAMING = (RUN_LOCAL? 1'000'000: 1'000'000'000);
 
 constexpr uint32_t ct229 = (1 << 29) - 1;
 constexpr uint64_t M61 = (1ULL << 61) - 1, M61_2x = M61 * 2;
@@ -88,6 +115,10 @@ struct Uint128Equality {
         return a == b;
     }
 };
+
+std::string pad_parquet_fname(int ind);
+
+uint64_t get_filesize(std::string fname);
 
 __host__ __device__ int get_msb(int x);
 
