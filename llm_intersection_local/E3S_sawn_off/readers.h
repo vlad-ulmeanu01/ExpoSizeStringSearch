@@ -3,8 +3,7 @@
 
 ///struct mostenibil. cu ajutorul lui citim urmatorul string pentru dictionar.
 struct DictReader {
-    int q;
-
+    virtual int get_q() = 0;
     virtual std::vector<uint8_t> get_next_t() = 0;
 };
 
@@ -14,6 +13,8 @@ struct CsesReader: DictReader {
     int q;
 
     CsesReader(std::ifstream fin);
+
+    int get_q();
 
     std::vector<uint8_t> get_next_t();
 };
@@ -30,6 +31,8 @@ struct ParquetChunkReader: DictReader {
     std::shared_ptr<arrow::StringArray> sa;
 
     ParquetChunkReader();
+
+    int get_q();
 
     void setup_parquet_file(int ind);
 

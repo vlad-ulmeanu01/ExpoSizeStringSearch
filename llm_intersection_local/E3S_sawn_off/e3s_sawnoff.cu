@@ -41,7 +41,7 @@ void E3S_sawnoff::update_s(const std::vector<uint8_t>& s) {
 void E3S_sawnoff::read_ts(std::unique_ptr<DictReader> dire) {
     m = 0;
     dire = std::move(dire);
-    q = dire->q;
+    q = dire->get_q();
     dev_ts_info.resize(q);
     hst_ts_count.resize(q);
 

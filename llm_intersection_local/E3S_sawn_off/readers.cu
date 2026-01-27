@@ -2,7 +2,11 @@
 #include "utils.h"
 
 CsesReader::CsesReader(std::ifstream fin): fin(std::move(fin)), cnt_strs_read(0) {
-    fin >> q;
+    this->fin >> q; ///!!
+}
+
+int CsesReader::get_q() {
+    return q;
 }
 
 ///intoarce true <=> mai exista inca un string de citit.
@@ -22,6 +26,10 @@ ParquetChunkReader::ParquetChunkReader(): pq_ind(0), file_ind(0), row_ind(0), co
     }
 
     setup_parquet_file(0);
+}
+
+int ParquetChunkReader::get_q() {
+    return q;
 }
 
 void ParquetChunkReader::setup_parquet_file(int ind) {
