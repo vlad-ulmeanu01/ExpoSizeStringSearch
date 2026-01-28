@@ -19,8 +19,8 @@ std::vector<uint8_t> CsesReader::get_next_t() {
 }
 
 
-ParquetChunkReader::ParquetChunkReader(): pq_ind(0), file_ind(0), row_ind(0), col_ind(0), have_next(true), q(0) {
-    for (int i = 0; i < CNT_PARQUET_FILES; i++) {
+ParquetChunkReader::ParquetChunkReader(int cnt_parquet_files): cnt_parquet_files(cnt_parquet_files), pq_ind(0), file_ind(0), row_ind(0), col_ind(0), have_next(true), q(0) {
+    for (int i = 0; i < cnt_parquet_files; i++) {
         setup_parquet_file(i);
         for (int z = 0; z < sa->length(); z++) q += (sa->value_offset(z+1) - sa->value_offset(z) + PARQUET_BYTES_PER_READ - 1) / PARQUET_BYTES_PER_READ;
     }
@@ -49,7 +49,7 @@ void ParquetChunkReader::setup_parquet_file(int ind) {
 std::vector<uint8_t> ParquetChunkReader::get_next_t() {
     if (!have_next) return std::vector<uint8_t>();
     have_next = (
-        pq_ind + 1 < CNT_PARQUET_FILES ||
+        pq_ind + 1 < cnt_parquet_files ||
         row_ind + 1 < sa->length() ||
         sa->value_offset(row_ind) + col_ind + PARQUET_BYTES_PER_READ < sa->value_offset(row_ind+1)
     );
@@ -66,6 +66,7 @@ std::vector<uint8_t> ParquetChunkReader::get_next_t() {
         if (row_ind >= sa->length()) {
             row_ind = 0;
             pq_ind++;
+            if (pq_ind < cnt_parquet_files) setup_parquet_file(pq_ind);
         }
     }
 

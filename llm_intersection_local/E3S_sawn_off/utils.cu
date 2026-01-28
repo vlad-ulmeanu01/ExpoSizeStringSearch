@@ -1,5 +1,11 @@
 #include "utils.h"
 
+void dbg_gpu_mem() {
+    size_t freeMem, totalMem;
+    cudaMemGetInfo(&freeMem, &totalMem);
+    std::cerr << std::fixed << std::setprecision(3) << "GPU used memory: " << ((double)totalMem - freeMem) / (1<<30) <<" GB / " << (double)totalMem / (1<<30) << " GB\n";
+}
+
 std::string pad_parquet_fname(int ind) {
     std::stringstream ss;
     ss << std::setfill('0') << std::setw(5) << ind;

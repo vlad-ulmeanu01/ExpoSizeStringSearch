@@ -40,20 +40,24 @@
 #define DBGP(x) std::cerr<<(#x)<<": "<<x.first<<' '<<x.second<<'\n';
 #define DBGSP(x) { std::cerr<<(#x)<<"[stl pair]:\n"; for(auto _: x) std::cerr<<_.first<<' '<<_.second<<'\n'; }
 
+#define TIMER_START auto start = std::chrono::steady_clock::now(), stop = std::chrono::steady_clock::now();
+#define TIMER_SPLIT(x) stop = std::chrono::steady_clock::now(); dbg_gpu_mem(); std::cerr << "(timer split) " << x << ": " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() * 1e-6 << '\n'; start = std::chrono::steady_clock::now();
+
 using uint128_t = unsigned __int128;
 
-constexpr bool DEBUG_FLAG = true;
+constexpr bool DEBUG_FLAG = false;
 constexpr uint64_t DEBUG_SEED = 8701438702UL;
 
-const bool RUN_LOCAL = true;
+const bool RUN_LOCAL = false;
 
-const int CNT_PARQUET_FILES = -1; //4; ///daca este < 0 => format CSES.
+// const int CNT_PARQUET_FILES = 4; ///daca este < 0 => format CSES.
 const std::string PARQUET_DIR = (RUN_LOCAL?
     "/home/vlad/Documents/SublimeMerge/ExpoSizeStringSearch/llm_intersection_local/intersection_test_files/the_pile_deduplicated/":
     "/export/home/acs/stud/v/vlad_adrian.ulmeanu/E3S_local/llm_copyright/the_pile_deduplicated/"
 );
 
-const int CNT_ATTACK_FILES = 1; ///trebuie sa fie >= 1.
+// const int CNT_ATTACK_FILES = 1; ///trebuie sa fie >= 1.
+const int BATCH_FILE_MAX_SIZE = (50 << 20);
 const std::string ATTACK_DIR = (RUN_LOCAL?
     "/home/vlad/Documents/SublimeMerge/ExpoSizeStringSearch/llm_intersection_local/intersection_test_files/outputs_pythia_batched/":
     "/export/home/acs/stud/v/vlad_adrian.ulmeanu/E3S_local/llm_copyright/outputs_pythia_batched/"
@@ -62,7 +66,7 @@ const std::string ATTACK_DIR = (RUN_LOCAL?
 constexpr int PARQUET_BYTES_PER_READ = 100;
 
 constexpr int THREADS_PER_BLOCK = 256;
-constexpr int MAXM_STREAMING = (RUN_LOCAL? 1'000'000: 1'000'000'000);
+constexpr int MAXM_STREAMING = (RUN_LOCAL? 1'000'000: 1'000'000); ///1'000'000'000
 
 constexpr uint32_t ct229 = (1 << 29) - 1;
 constexpr uint64_t M61 = (1ULL << 61) - 1, M61_2x = M61 * 2;
@@ -115,6 +119,8 @@ struct Uint128Equality {
         return a == b;
     }
 };
+
+void dbg_gpu_mem();
 
 std::string pad_parquet_fname(int ind);
 

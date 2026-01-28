@@ -132,6 +132,8 @@ void E3S_sawnoff::read_ts(std::unique_ptr<DictReader> dire) {
     flush_streaming_segment(q-1);
     dev_ts_info = hst_ts_info;
 
+    std::cerr << "first part of read_ts finished!\n";
+
     // std::sort(ts_tmp.begin(), ts_tmp.begin() + k, [](const TsInfo &a, const TsInfo &b) {
     //     if (a.hh_ps[0] != b.hh_ps[0]) return a.hh_ps[0] < b.hh_ps[0]; ///intai acelasi prefix ca sa putem face grupurile.
     //     if (a.suff_len != b.suff_len) return a.suff_len < b.suff_len; ///(nu aici..) apoi aceeasi lungime. pentru aceeasi lungime putem calcula intr-o sg trecere prin partea cealalta a grupului. (aveam "<"..)

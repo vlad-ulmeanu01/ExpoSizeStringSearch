@@ -30,7 +30,7 @@ struct ParquetChunkReader: DictReader {
     std::shared_ptr<arrow::ChunkedArray> array;
     std::shared_ptr<arrow::StringArray> sa;
 
-    ParquetChunkReader();
+    ParquetChunkReader(int cnt_parquet_files);
 
     int get_q();
 
