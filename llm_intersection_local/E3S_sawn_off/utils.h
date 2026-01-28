@@ -34,14 +34,14 @@
 
 #define aaa system("read -r -p \"Press enter to continue...\" key");
 #define NAME(x) (#x)
-#define DBG(x) std::cerr<<(#x)<<": "<<(x)<<'\n';
-#define DBGA(x,n) { std::cerr<<(#x)<<"[]: "; for(int _=0;_<n;_++) std::cerr<<x[_]<<' '; std::cerr<<'\n'; }
-#define DBGS(x) { std::cerr<<(#x)<<"[stl]: "; for(auto _: x) std::cerr<<_<<' '; std::cerr<<'\n'; }
-#define DBGP(x) std::cerr<<(#x)<<": "<<x.first<<' '<<x.second<<'\n';
-#define DBGSP(x) { std::cerr<<(#x)<<"[stl pair]:\n"; for(auto _: x) std::cerr<<_.first<<' '<<_.second<<'\n'; }
+#define DBG(x) std::cerr<<(#x)<<": "<<(x)<<'\n'<<std::flush;
+#define DBGA(x,n) { std::cerr<<(#x)<<"[]: "; for(int _=0;_<n;_++) std::cerr<<x[_]<<' '; std::cerr<<'\n'<<std::flush; }
+#define DBGS(x) { std::cerr<<(#x)<<"[stl]: "; for(auto _: x) std::cerr<<_<<' '; std::cerr<<'\n'<<std::flush; }
+#define DBGP(x) std::cerr<<(#x)<<": "<<x.first<<' '<<x.second<<'\n'<<std::flush;
+#define DBGSP(x) { std::cerr<<(#x)<<"[stl pair]:\n"; for(auto _: x) std::cerr<<_.first<<' '<<_.second<<'\n'<<std::flush; }
 
 #define TIMER_START auto start = std::chrono::steady_clock::now(), stop = std::chrono::steady_clock::now();
-#define TIMER_SPLIT(x) stop = std::chrono::steady_clock::now(); dbg_gpu_mem(); std::cerr << "(timer split) " << x << ": " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() * 1e-6 << '\n'; start = std::chrono::steady_clock::now();
+#define TIMER_SPLIT(x) stop = std::chrono::steady_clock::now(); dbg_gpu_mem(); std::cerr << "(timer split) " << x << ": " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() * 1e-6 << " s \n"; start = std::chrono::steady_clock::now();
 
 using uint128_t = unsigned __int128;
 
