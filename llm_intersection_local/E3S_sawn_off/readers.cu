@@ -19,9 +19,11 @@ std::vector<uint8_t> CsesReader::get_next_t() {
     return vt;
 }
 
-void CsesReader::receive_t(const std::vector<uint8_t>& t) { assert(false); }
+void CsesReader::receive_t(const std::vector<uint8_t> t, const std::vector<uint8_t> t_prev, const std::vector<uint8_t> t_foll) { assert(false); }
 
 void CsesReader::reset_iter() { assert(false); }
+
+std::pair<std::vector<uint8_t>, std::vector<uint8_t>> CsesReader::get_next_neighs() { assert(false); return std::make_pair(std::vector<uint8_t>(), std::vector<uint8_t>()); }
 
 
 ParquetChunkReader::ParquetChunkReader(int cnt_parquet_files): cnt_parquet_files(cnt_parquet_files), pq_ind(0), file_ind(0), row_ind(0), col_ind(0), have_next(true), q(0) {
@@ -87,17 +89,20 @@ std::vector<uint8_t> ParquetChunkReader::get_next_t() {
     return vt;
 }
 
-void ParquetChunkReader::receive_t(const std::vector<uint8_t>& t) { assert(false); }
+void ParquetChunkReader::receive_t(const std::vector<uint8_t> t, const std::vector<uint8_t> t_prev, const std::vector<uint8_t> t_foll) { assert(false); }
+
+std::pair<std::vector<uint8_t>, std::vector<uint8_t>> ParquetChunkReader::get_next_neighs() { assert(false); return std::make_pair(std::vector<uint8_t>(), std::vector<uint8_t>()); }
 
 
-InterReader::InterReader(): ind(0) {}
+InterReader::InterReader(): ind(0), ind_neighs(0) {}
 
 int InterReader::get_q() {
     return ts.size();
 }
 
-void InterReader::receive_t(const std::vector<uint8_t>& t) {
+void InterReader::receive_t(const std::vector<uint8_t> t, const std::vector<uint8_t> t_prev, const std::vector<uint8_t> t_foll) {
     ts.push_back(t);
+    chain_neighs.emplace_back(t_prev, t_foll);
 }
 
 std::vector<uint8_t> InterReader::get_next_t() {
@@ -107,4 +112,10 @@ std::vector<uint8_t> InterReader::get_next_t() {
 
 void InterReader::reset_iter() {
     ind = 0;
+    ind_neighs = 0;
+}
+
+std::pair<std::vector<uint8_t>, std::vector<uint8_t>> InterReader::get_next_neighs() {
+    if (ind_neighs >= (int)chain_neighs.size()) return std::make_pair(std::vector<uint8_t>(), std::vector<uint8_t>());
+    return chain_neighs[ind_neighs++];
 }

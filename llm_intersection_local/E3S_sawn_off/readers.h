@@ -5,8 +5,9 @@
 struct DictReader {
     virtual int get_q() = 0;
     virtual std::vector<uint8_t> get_next_t() = 0;
-    virtual void receive_t(const std::vector<uint8_t>& t) = 0;
     virtual void reset_iter() = 0;
+    virtual void receive_t(const std::vector<uint8_t> t, const std::vector<uint8_t> t_prev, const std::vector<uint8_t> t_foll) = 0;
+    virtual std::pair<std::vector<uint8_t>, std::vector<uint8_t>> get_next_neighs() = 0;
 };
 
 struct CsesReader: DictReader {
@@ -19,8 +20,9 @@ struct CsesReader: DictReader {
     int get_q();
     std::vector<uint8_t> get_next_t();
 
-    void receive_t(const std::vector<uint8_t>& t); ///nefolosit.
     void reset_iter(); ///nefolosit.
+    void receive_t(const std::vector<uint8_t> t, const std::vector<uint8_t> t_prev, const std::vector<uint8_t> t_foll); ///nefolosit.
+    std::pair<std::vector<uint8_t>, std::vector<uint8_t>> get_next_neighs(); ///nefolosit.
 };
 
 struct ParquetChunkReader: DictReader {
@@ -41,18 +43,23 @@ struct ParquetChunkReader: DictReader {
     void setup_parquet_file(int ind); ///e doar apelat din clasa, deci nu ai nevoie de definire in DictReader.
     void reset_iter();
 
-    void receive_t(const std::vector<uint8_t>& t); ///nefolosit.
+    void receive_t(const std::vector<uint8_t> t, const std::vector<uint8_t> t_prev, const std::vector<uint8_t> t_foll); ///nefolosit.
+    std::pair<std::vector<uint8_t>, std::vector<uint8_t>> get_next_neighs(); ///nefolosit.
 };
 
 ///reader in care pui rezultate dupa ce termina altul.
 struct InterReader: DictReader {
     std::vector<std::vector<uint8_t>> ts;
-    int ind;
+
+    ///ts tine minte concatentari de gasiri. in chain_neighs tin minte capetele ce nu am putut sa le extind.
+    std::vector<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>> chain_neighs;
+    int ind, ind_neighs;
 
     InterReader();
 
     int get_q();
     std::vector<uint8_t> get_next_t();
-    void receive_t(const std::vector<uint8_t>& t);
     void reset_iter();
+    void receive_t(const std::vector<uint8_t> t, const std::vector<uint8_t> t_prev, const std::vector<uint8_t> t_foll);
+    std::pair<std::vector<uint8_t>, std::vector<uint8_t>> get_next_neighs();
 };

@@ -7,7 +7,7 @@ E3S_sawnoff::E3S_sawnoff():
 {}
 
 
-void E3S_sawnoff::update_s(const std::vector<uint8_t>& s) {
+void E3S_sawnoff::update_s(const std::vector<uint8_t>& s, bool reset_ts_counts) {
     n = s.size();
     dev_base_pws.resize(n+1);
     dev_s_cuts.resize(n+1);
@@ -34,6 +34,10 @@ void E3S_sawnoff::update_s(const std::vector<uint8_t>& s) {
     }
 
     // DBGD(uint64_t, dev_s_cuts); ///ok.
+
+    if (reset_ts_counts) {
+        thrust::for_each(dev_ts_info.begin(), dev_ts_info.end(), [] __device__ (TsInfo& t) { t.count = 0; });
+    }
 }
 
 
@@ -131,8 +135,6 @@ void E3S_sawnoff::read_ts(std::unique_ptr<DictReader> dire) {
 
     flush_streaming_segment(q-1);
     dev_ts_info = hst_ts_info;
-
-    std::cerr << "first part of read_ts finished!\n";
 
     // std::sort(ts_tmp.begin(), ts_tmp.begin() + k, [](const TsInfo &a, const TsInfo &b) {
     //     if (a.hh_ps[0] != b.hh_ps[0]) return a.hh_ps[0] < b.hh_ps[0]; ///intai acelasi prefix ca sa putem face grupurile.

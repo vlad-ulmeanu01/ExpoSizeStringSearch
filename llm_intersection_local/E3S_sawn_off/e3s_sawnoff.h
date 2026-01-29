@@ -18,7 +18,7 @@ struct E3S_sawnoff {
 
     E3S_sawnoff();
 
-    void update_s(const std::vector<uint8_t>& s);
+    void update_s(const std::vector<uint8_t>& s, bool reset_ts_counts);
 
     void read_ts(std::unique_ptr<DictReader> dire);
 

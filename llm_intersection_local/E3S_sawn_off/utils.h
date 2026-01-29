@@ -10,9 +10,13 @@
 #include <thrust/pair.h>
 #include <cub/cub.cuh>
 
+#include <parquet/stream_writer.h>
 #include <parquet/arrow/reader.h>
+#include <parquet/schema.h>
+#include <parquet/types.h>
 #include <arrow/chunked_array.h>
 #include <arrow/pretty_print.h>
+#include <arrow/io/file.h>
 #include <arrow/io/api.h>
 #include <arrow/array.h>
 #include <arrow/type.h>
