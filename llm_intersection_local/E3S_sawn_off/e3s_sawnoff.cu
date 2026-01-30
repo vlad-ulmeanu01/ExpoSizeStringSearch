@@ -221,6 +221,9 @@ void E3S_sawnoff::compute_ts_counts() {
     thrust::device_vector<PrefixInfo> dev_prefs(n);
     thrust::device_vector<thrust::pair<int, int>> dev_group_ts_ends(n);
 
+    std::cerr << "compute_ts_counts begin, ";
+    dbg_gpu_mem();
+
     for (int off = 0; off+1 < (int)hst_ts_pref_offsets.size(); off++) {
         int offset = hst_ts_pref_offsets[off];
 
